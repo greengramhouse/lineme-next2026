@@ -1,0 +1,46 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+// prisma/schema.prisma
+
+model User {
+  id            String   @id @default(uuid()) // ไอดีภายในระบบของเรา
+  lineId        String   @unique              // ไอดีของ LINE (สำคัญ ต้อง Unique)
+  displayName   String
+  pictureUrl    String?  // เผื่อบางคนไม่ได้ตั้งรูปโปรไฟล์
+  statusMessage String?  // สเตตัสที่ตั้งใน LINE
+  isFollowing   Boolean  @default(true)       // สถานะว่ายังติดตามบอทอยู่ไหม
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model AutoReply {
+  id        String    @id @default(uuid())
+  keyword   String    @unique // คำค้นหา เช่น "สวัสดี", "product"
+  matchType MatchType @default(EXACT)
+  payload   Json      // เก็บข้อมูล JSON ก้อนใหญ่ (messages, showLoading)
+  isActive  Boolean   @default(true) // เปิด/ปิด การใช้งานคีย์เวิร์ดนี้
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // สร้าง Index เพื่อให้การค้นหา Keyword เร็วขึ้น
+  @@index([keyword])
+}
+
+// กำหนด Enum สำหรับประเภทการจับคู่คำ
+enum MatchType {
+  EXACT     // ต้องพิมพ์ตรงตัวเป๊ะๆ
+  CONTAINS  // พิมพ์แค่มีคำนี้ผสมอยู่ก็ทำงาน
+}
