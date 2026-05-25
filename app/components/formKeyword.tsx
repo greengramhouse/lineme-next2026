@@ -1,41 +1,43 @@
-"use client"; // จำเป็นต้องใส่สำหรับ Next.js App Router เมื่อมีการใช้ useState
-import { useState } from "react";
+"use client";
+import { useState, ChangeEvent } from "react";
 
-export default function FormKeyword() {
-  // 1. รวบ State เป็น Object ก้อนเดียว
+// สร้าง Type เพื่อรับค่าเข้ามา
+interface FormKeywordProps {
+  editData?: any; // ข้อมูลเดิม (ถ้ามีแปลว่ากำลังแก้ไข)
+  onSuccess?: () => void; // ฟังก์ชันที่ให้ทำหลังบันทึกเสร็จ (เช่น ปิด Modal)
+}
+
+export default function FormKeyword({ editData, onSuccess }: FormKeywordProps) {
+  // ถัามีข้อมูล editData ส่งมา ให้เอามาเป็นค่าเริ่มต้น แต่ถ้าไม่มีให้เป็นช่องว่าง
   const [formData, setFormData] = useState({
-    keyword: "",
-    matchType: "EXACT",
-    payload: "",
+    keyword: editData?.keyword || "",
+    matchType: editData?.matchType || "EXACT",
+    // แปลง Object กลับเป็น JSON String สวยๆ เพื่อใส่ลงช่อง textarea
+    payload: editData?.payload ? JSON.stringify(editData.payload, null, 2) : "", 
   });
 
   const [isLoading, setIsLoading] = useState(false);
 
-  // 2. ฟังก์ชันจัดการ onChange แบบครอบจักรวาล (Dynamic)
-const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    // ใช้ ...prev เพื่อก๊อปปี้ค่าเก่าไว้ แล้วอัปเดตเฉพาะ field ที่ชื่อตรงกับ name ของ input
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // 3. ฟังก์ชัน Submit ส่งข้อมูลไปที่ API
-const handleSubmit = async (e: React.SyntheticEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      // แปลง Text ใน textarea ให้เป็น JSON Object ก่อนส่ง
       const parsedPayload = JSON.parse(formData.payload);
 
-      // ยิง API ที่เราสร้างไว้
-      const response = await fetch("/api/keywords", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+      // 🌟 เช็คว่าเป็น โหมดแก้ไข หรือ โหมดเพิ่มใหม่
+      const isEditMode = !!editData;
+      const url = isEditMode ? `/api/keywords/${editData.id}` : "/api/keywords";
+      const method = isEditMode ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method: method,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           keyword: formData.keyword,
           matchType: formData.matchType,
@@ -46,9 +48,15 @@ const handleSubmit = async (e: React.SyntheticEvent) => {
       const result = await response.json();
 
       if (response.ok) {
-        alert("บันทึกสำเร็จ!");
-        // ล้างค่าในฟอร์มเมื่อบันทึกเสร็จ
-        setFormData({ keyword: "", matchType: "EXACT", payload: "" });
+        alert(isEditMode ? "แก้ไขข้อมูลสำเร็จ!" : "เพิ่มข้อมูลสำเร็จ!");
+        
+        // ถ้ามีฟังก์ชัน onSuccess ส่งมา (เช่น ปิด Modal และรีเฟรชหน้า) ให้เรียกใช้งาน
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          // ถ้าไม่มี ก็ล้างฟอร์มธรรมดา
+          setFormData({ keyword: "", matchType: "EXACT", payload: "" });
+        }
       } else {
         alert("Error: " + result.error);
       }

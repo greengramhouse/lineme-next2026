@@ -5,6 +5,9 @@ import { findMatchedReply } from "@/services/replyRuleService";
 import { updateProfileInBackground } from "@/services/userService";
 import { replyMessages, replyText } from "@/services/replyService";
 
+// 🌟 นำเข้า Gemini Service ที่เราเพิ่งสร้าง
+import { generateGeminiReply } from "@/services/geminiService";
+
 export async function handleMessageEvent(event: webhook.MessageEvent) {
   if (!event.replyToken) return;
   
@@ -21,22 +24,32 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
     // 2. ถ้าเจอคำตอบในฐานข้อมูล
     if (matchedReply) {
-      // 2.1 แสดง Loading ถ้าระบุไว้ใน Payload
       if (matchedReply.showLoading && userId) {
         await lineClient.showLoadingAnimation({
           chatId: userId,
           loadingSeconds: 5,
         });
       }
-
-      // 2.2 ส่งข้อความกลับไป (โยน array ของ messages กลับไปได้เลย)
-// 🌟 ใช้ Service ตอบกลับแบบ Dynamic โยน messages เข้าไปได้เลย
       await replyMessages(event.replyToken, matchedReply.messages);
-      return; // จบการทำงาน
+      return; 
     }
 
-   // ถ้าไม่เจอคำตอบ (ใช้ Text ธรรมดาตอบกลับ)
-    await replyText(event.replyToken, "ขออภัยครับ บอทยังไม่เข้าใจคำสั่งนี้");
+    // ==========================================
+    // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini จัดการ!
+    // ==========================================
+    
+    // โชว์ Loading (ให้จุดไข่ปลาหมุนๆ) ระหว่างที่ AI กำลังคิดหาคำตอบ
+    if (userId) {
+      await lineClient.showLoadingAnimation({
+        chatId: userId,
+        loadingSeconds: 5,
+      }).catch(console.error);
+    }
+
+    // เรียกใช้ Gemini
+    const aiText = await generateGeminiReply(userText);
+    
+    // ส่งคำตอบจาก AI กลับไปให้ผู้ใช้
+    await replyText(event.replyToken, aiText);
   }
 }
-
