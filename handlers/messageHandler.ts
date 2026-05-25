@@ -3,7 +3,7 @@ import { webhook } from "@line/bot-sdk";
 import { lineClient } from "@/config/line-config";
 import { findMatchedReply } from "@/services/replyRuleService";
 import { updateProfileInBackground } from "@/services/userService";
-import { replyMessages, replyText } from "@/services/replyService";
+import { replyMessages } from "@/services/replyService";
 
 // 🌟 นำเข้า Gemini Service ที่เราเพิ่งสร้าง
 import { generateGeminiReply } from "@/services/geminiService";
@@ -22,7 +22,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     // 1. นำข้อความไปเช็คในฐานข้อมูล
     const matchedReply = await findMatchedReply(userText.toLowerCase());
 
-    // 2. ถ้าเจอคำตอบในฐานข้อมูล
+// 2. ถ้าเจอคำตอบในฐานข้อมูล
     if (matchedReply) {
       if (matchedReply.showLoading && userId) {
         await lineClient.showLoadingAnimation({
@@ -30,7 +30,23 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
           loadingSeconds: 5,
         });
       }
-      await replyMessages(event.replyToken, matchedReply.messages);
+
+      // 🌟 สร้างโปรไฟล์จำแลงที่ต้องการ (เช่น เปลี่ยนเป็นน้องกรีน หรือ ชื่อโรงเรียน)
+      const customSender = {
+        name: "น้องโปรแกรม..ครับ 👦🏻", 
+        iconUrl: "https://res.cloudinary.com/djkbdwnsc/image/upload/v1779729334/1779607842295_tal5sz.png"
+      };
+
+      // 🌟 ใช้ .map() เพื่อแกะกล่องข้อความเดิม แล้วยัด sender เข้าไปในทุกๆ ข้อความ
+      const messagesWithSender = matchedReply.messages.map((msg: any) => {
+        return {
+          ...msg, // ก๊อปปี้ข้อมูลเดิมทั้งหมด (เช่น Flex, Text)
+          sender: customSender // เติม sender เข้าไป
+        };
+      });
+
+      // โยนข้อความที่ถูกอัปเกรดแล้ว ไปให้ฟังก์ชันตอบกลับ
+      await replyMessages(event.replyToken, messagesWithSender);
       return; 
     }
 
