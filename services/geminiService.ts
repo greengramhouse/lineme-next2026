@@ -8,7 +8,7 @@ const genAI = new GoogleGenerativeAI(apiKey);
 export async function generateGeminiReply(userText: string): Promise<string> {
   try {
     // แนะนำรุ่น 1.5-flash เพราะทำงานเร็วมาก เหมาะกับแชทบอทที่สุดครับ
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-lite" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
     
     // โยนข้อความของผู้ใช้ไปให้ AI คิด
     const result = await model.generateContent(userText);
