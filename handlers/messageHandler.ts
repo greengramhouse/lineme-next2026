@@ -33,7 +33,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
       // 🌟 สร้างโปรไฟล์จำแลงที่ต้องการ (เช่น เปลี่ยนเป็นน้องกรีน หรือ ชื่อโรงเรียน)
       const customSender = {
-        name: "น้องโปรแกรม..ครับ 👦🏻", 
+        name: "น้องโปรแกรม 👦🏻", 
         iconUrl: "https://res.cloudinary.com/djkbdwnsc/image/upload/c_thumb,w_200,g_face/v1779729334/1779607842295_tal5sz.png"
       };
 
