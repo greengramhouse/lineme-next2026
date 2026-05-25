@@ -17,7 +17,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     const userText = event.message.text.trim();
 
     // 1. นำข้อความไปเช็คในฐานข้อมูล
-    const matchedReply = await findMatchedReply(userText);
+    const matchedReply = await findMatchedReply(userText.toLowerCase());
 
     // 2. ถ้าเจอคำตอบในฐานข้อมูล
     if (matchedReply) {
