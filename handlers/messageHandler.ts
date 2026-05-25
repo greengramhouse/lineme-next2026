@@ -34,11 +34,10 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
       return; 
     }
 
-    // ==========================================
-    // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini จัดการ!
+// ==========================================
+    // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini (น้องกรีน) จัดการ!
     // ==========================================
     
-    // โชว์ Loading (ให้จุดไข่ปลาหมุนๆ) ระหว่างที่ AI กำลังคิดหาคำตอบ
     if (userId) {
       await lineClient.showLoadingAnimation({
         chatId: userId,
@@ -49,7 +48,20 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     // เรียกใช้ Gemini
     const aiText = await generateGeminiReply(userText);
     
-    // ส่งคำตอบจาก AI กลับไปให้ผู้ใช้
-    await replyText(event.replyToken, aiText);
+    // 🌟 สั่งให้ตอบกลับใน "ร่างของน้องกรีน"
+    // รวบ replyToken และ messages ให้อยู่ในปีกกา {} ก้อนเดียวกัน
+    await lineClient.replyMessage({
+      replyToken: event.replyToken,
+      messages: [
+        {
+          type: "text",
+          text: aiText,
+          sender: {
+            name: "น้องกรีน 👧🏻", // 👈 ปรับให้สั้นลงเพื่อป้องกัน Emoji กินโควต้าตัวอักษร
+            iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
+          }
+        }
+      ]
+    });
   }
 }
