@@ -34,7 +34,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
       // 🌟 สร้างโปรไฟล์จำแลงที่ต้องการ (เช่น เปลี่ยนเป็นน้องกรีน หรือ ชื่อโรงเรียน)
       const customSender = {
         name: "น้องโปรแกรม 👦🏻", 
-        iconUrl: "https://res.cloudinary.com/djkbdwnsc/image/upload/v1779729334/1779607842295_tal5sz.png"
+        iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
       };
 
       // 🌟 ใช้ .map() เพื่อแกะกล่องข้อความเดิม แล้วยัด sender เข้าไปในทุกๆ ข้อความ
