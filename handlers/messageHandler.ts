@@ -80,4 +80,16 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
       ]
     });
   }
+
+  if (event.message.type === "audio") {
+    await lineClient.replyMessage({
+      replyToken: event.replyToken,
+      messages: [
+        {
+          type: "text",
+          text: "ขอโทษค่ะ ตอนนี้น้องกรีนยังฟังเสียงไม่ได้นะคะ 😢 แต่ถ้าพิมพ์มาคุยกันได้เลยนะคะ!"
+        }
+      ]
+    });
+  }
 }

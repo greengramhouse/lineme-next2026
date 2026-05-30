@@ -67,6 +67,6 @@ export async function generateGeminiReply(userText: string): Promise<string> {
   } catch (error) {
     console.error("Gemini API Error:", error);
     // 🌟 ปรับประโยค Error ให้เข้ากับบุคลิกน้องกรีนด้วย
-    return "แงงง ระบบของน้องกรีนขัดข้องนิดหน่อยค่ะ 😭 รบกวนพิมพ์ถามหนูใหม่อีกครั้งนะคะ 🙏✨";
+    return "แงงง ระบบของน้องกรีนขัดข้องนิดหน่อยค่ะ 😭 รบกวนพิมพ์ถามหนูใหม่อีกครั้งนะคะ หรือลองพูดคุยกับน้องโปรแกรมก่อนก็ได้ค่ะ 🙏✨";
   }
 }
