@@ -95,12 +95,24 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     }
 
     try {
-      // 🌟 2. โหลดไฟล์เสียงจาก LINE
-      const audioBlob = await lineBlobClient.getMessageContent(messageId);
+// สเตปที่ 2: โหลดไฟล์เสียงจาก LINE
+      const audioContent = await lineBlobClient.getMessageContent(messageId);
       
-      // 🛠️ แก้หยักแดงด้วยการใส่ as any
-      const arrayBuffer = await (audioBlob as any).arrayBuffer();
-      const audioBuffer = Buffer.from(arrayBuffer);
+      // 🌟 ท่าไม้ตายครอบจักรวาล: แปลงข้อมูลเป็น Buffer ไม่ว่ามันจะมาในรูปแบบไหน
+      let audioBuffer: Buffer;
+
+      if (typeof (audioContent as any).arrayBuffer === "function") {
+        // กรณีที่ 1: ระบบส่งมาเป็น Blob มาตรฐาน
+        const arrayBuf = await (audioContent as any).arrayBuffer();
+        audioBuffer = Buffer.from(arrayBuf);
+      } else {
+        // กรณีที่ 2: ระบบส่งมาเป็น Stream (Next.js มักจะเป็นตัวนี้)
+        const chunks: any[] = [];
+        for await (const chunk of (audioContent as any)) {
+          chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+        }
+        audioBuffer = Buffer.concat(chunks);
+      }
 
       // 🌟 3. ส่งเข้า Typhoon ASR เพื่อถอดเสียงเป็นข้อความ
       const transcribedText = await processTyphoonASR(audioBuffer);
