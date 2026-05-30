@@ -1,12 +1,13 @@
 // src/handlers/messageHandler.ts
 import { webhook } from "@line/bot-sdk";
-import { lineClient } from "@/config/line-config";
+import { lineBlobClient, lineClient } from "@/config/line-config";
 import { findMatchedReply } from "@/services/replyRuleService";
 import { updateProfileInBackground } from "@/services/userService";
 import { replyMessages } from "@/services/replyService";
 
 // 🌟 นำเข้า Gemini Service ที่เราเพิ่งสร้าง
 import { generateGeminiReply } from "@/services/geminiService";
+import { processTyphoonASR } from "@/services/typhoon";
 
 export async function handleMessageEvent(event: webhook.MessageEvent) {
   if (!event.replyToken) return;
@@ -82,14 +83,63 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
   }
 
   if (event.message.type === "audio") {
-    await lineClient.replyMessage({
-      replyToken: event.replyToken,
-      messages: [
-        {
-          type: "text",
-          text: "ขอโทษค่ะ ตอนนี้น้องกรีนยังฟังเสียงไม่ได้นะคะ 😢 แต่ถ้าพิมพ์มาคุยกันได้เลยนะคะ!"
-        }
-      ]
-    });
+    const messageId = event.message.id;
+
+    // 🌟 1. โชว์ Loading ก่อนเลย (สำคัญมาก!)
+    // เพราะการแปลงเสียง + ให้ AI คิดคำตอบ อาจจะใช้เวลาเกือบ 5-10 วินาที
+    if (userId) {
+      await lineClient.showLoadingAnimation({
+        chatId: userId,
+        loadingSeconds: 10, // ตั้งเผื่อไว้ 10 วินาทีเลยครับ
+      }).catch(console.error);
+    }
+
+    try {
+      // 🌟 2. โหลดไฟล์เสียงจาก LINE
+      const audioBlob = await lineBlobClient.getMessageContent(messageId);
+      
+      // 🛠️ แก้หยักแดงด้วยการใส่ as any
+      const arrayBuffer = await (audioBlob as any).arrayBuffer();
+      const audioBuffer = Buffer.from(arrayBuffer);
+
+      // 🌟 3. ส่งเข้า Typhoon ASR เพื่อถอดเสียงเป็นข้อความ
+      const transcribedText = await processTyphoonASR(audioBuffer);
+
+      // เช็คว่า Typhoon พังไหม ถ้าพังให้ตอบกลับไปตรงๆ
+      if (transcribedText.includes("ไม่สามารถถอดข้อความ") || transcribedText.includes("ข้อผิดพลาด")) {
+        await lineClient.replyMessage({
+          replyToken: event.replyToken,
+          messages: [{ type: "text", text: transcribedText }]
+        });
+        return; // จบการทำงาน ไม่ต้องส่งให้ Gemini
+      }
+
+      // 🌟 4. โยนข้อความที่ถอดได้ ให้ Gemini ตอบ!
+      // เคล็ดลับ: แอบเติมวงเล็บเพื่อให้ Gemini รู้ว่านี่คือเสียงที่พิมพ์มา เผื่อประโยคอาจจะแปลกๆ ไปบ้าง
+      const geminiPrompt = `(นี่คือข้อความที่ถอดจากเสียงพูดของ User): ${transcribedText}`;
+      const aiText = await generateGeminiReply(geminiPrompt);
+
+      // 🌟 5. ตอบกลับด้วยร่างน้องกรีน
+      await lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: "text",
+            text: aiText, // ใช้ข้อความที่ Gemini คิดให้
+            sender: {
+              name: "น้องกรีน 👧🏻", 
+              iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
+            }
+          }
+        ]
+      });
+
+    } catch (error) {
+      console.error("Audio Webhook Error:", error);
+      await lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: "text", text: "ขออภัยค่ะ ระบบฟังเสียงมีปัญหาชั่วคราว พิมพ์มาคุยแทนน้องกรีนก่อนน้า 😢" }]
+      });
+    }
   }
 }
