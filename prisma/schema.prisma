@@ -44,3 +44,17 @@ enum MatchType {
   EXACT     // ต้องพิมพ์ตรงตัวเป๊ะๆ
   CONTAINS  // พิมพ์แค่มีคำนี้ผสมอยู่ก็ทำงาน
 }
+
+model RichMenu {
+  id          String   @id @default(uuid())
+  richMenuId  String?  @unique // เก็บ ID ที่ LINE ส่งกลับมาให้ตอนสร้างเสร็จ
+  aliasId     String?  @unique
+  name        String   // ชื่อเมนู (เอาไว้แสดงผลในตาราง Dashboard ของเราให้ดูง่ายๆ)
+  imageUrl    String   // ลิงก์รูปภาพ (เอาไว้โชว์พรีวิวในหน้าเว็บ และให้ API หลังบ้านโหลดไปส่งให้ LINE)
+  payload     Json     // วาง JSON ทั้งก้อนที่ก๊อปมาจาก LINE Bot Designer (มี size, chatBarText, areas ครบจบในช่องเดียว)
+  isDefault   Boolean  @default(false) // ระบุว่าเมนูนี้เป็น Default (แสดงทุกคน) หรือไม่
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([richMenuId])
+}

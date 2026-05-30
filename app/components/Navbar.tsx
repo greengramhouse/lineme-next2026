@@ -15,6 +15,11 @@ export default function Navbar() {
             Keywords
           </button>
         </Link>
+        <Link href="/dashboard/richmenu">
+          <button className="rounded bg-gray-700 px-3 py-1 hover:bg-gray-600">
+            Rich Menu
+          </button>
+        </Link>
         <button className="rounded bg-gray-700 px-3 py-1 hover:bg-gray-600">
           Settings
         </button>
