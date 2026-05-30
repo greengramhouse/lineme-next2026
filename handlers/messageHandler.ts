@@ -85,28 +85,23 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
   if (event.message.type === "audio") {
     const messageId = event.message.id;
 
-    // 🌟 1. โชว์ Loading ก่อนเลย (สำคัญมาก!)
-    // เพราะการแปลงเสียง + ให้ AI คิดคำตอบ อาจจะใช้เวลาเกือบ 5-10 วินาที
+    // 🌟 1. โชว์ Loading รอไว้ก่อนเลย (เพราะสเตปดาวน์โหลด + ASR ใช้เวลา)
     if (userId) {
       await lineClient.showLoadingAnimation({
         chatId: userId,
-        loadingSeconds: 10, // ตั้งเผื่อไว้ 10 วินาทีเลยครับ
+        loadingSeconds: 10,
       }).catch(console.error);
     }
 
     try {
-// สเตปที่ 2: โหลดไฟล์เสียงจาก LINE
+      // 🌟 2. โหลดไฟล์เสียงจาก LINE (รองรับทั้ง Blob และ Stream)
       const audioContent = await lineBlobClient.getMessageContent(messageId);
       
-      // 🌟 ท่าไม้ตายครอบจักรวาล: แปลงข้อมูลเป็น Buffer ไม่ว่ามันจะมาในรูปแบบไหน
       let audioBuffer: Buffer;
-
       if (typeof (audioContent as any).arrayBuffer === "function") {
-        // กรณีที่ 1: ระบบส่งมาเป็น Blob มาตรฐาน
         const arrayBuf = await (audioContent as any).arrayBuffer();
         audioBuffer = Buffer.from(arrayBuf);
       } else {
-        // กรณีที่ 2: ระบบส่งมาเป็น Stream (Next.js มักจะเป็นตัวนี้)
         const chunks: any[] = [];
         for await (const chunk of (audioContent as any)) {
           chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
@@ -114,30 +109,60 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
         audioBuffer = Buffer.concat(chunks);
       }
 
-      // 🌟 3. ส่งเข้า Typhoon ASR เพื่อถอดเสียงเป็นข้อความ
+      // 🌟 3. ส่งเข้า Typhoon ASR เพื่อแปลงเสียงพูดเป็นข้อความ Text
       const transcribedText = await processTyphoonASR(audioBuffer);
 
-      // เช็คว่า Typhoon พังไหม ถ้าพังให้ตอบกลับไปตรงๆ
+      // เช็คว่า Typhoon พังหรือไม่ ถ้าพังให้แจ้งเตือนและหยุดทำงาน
       if (transcribedText.includes("ไม่สามารถถอดข้อความ") || transcribedText.includes("ข้อผิดพลาด")) {
         await lineClient.replyMessage({
           replyToken: event.replyToken,
           messages: [{ type: "text", text: transcribedText }]
         });
-        return; // จบการทำงาน ไม่ต้องส่งให้ Gemini
+        return;
       }
 
-      // 🌟 4. โยนข้อความที่ถอดได้ ให้ Gemini ตอบ!
-      // เคล็ดลับ: แอบเติมวงเล็บเพื่อให้ Gemini รู้ว่านี่คือเสียงที่พิมพ์มา เผื่อประโยคอาจจะแปลกๆ ไปบ้าง
-      const geminiPrompt = `(นี่คือข้อความที่ถอดจากเสียงพูดของ User): ${transcribedText}`;
+      // นำข้อความเสียงที่ถอดได้มาตัดช่องว่างเตรียมเอาไปค้นหา
+      const cleanUserVoiceText = transcribedText.trim();
+
+      // ==========================================================
+      // 🌟 สเตปที่ 3.5: นำข้อความจากเสียงไปเช็ค Keyword ในฐานข้อมูลก่อน
+      // ==========================================================
+      const matchedReply = await findMatchedReply(cleanUserVoiceText.toLowerCase());
+
+      // เจอกลุ่มคำตอบที่ตรงกับคีย์เวิร์ด -> สั่งให้น้องโปรแกรมตอบทันที!
+      if (matchedReply) {
+        // สร้างโปรไฟล์จำแลงของน้องโปรแกรม
+        const customSender = {
+          name: "น้องโปรแกรม 👦🏻", 
+          iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
+        };
+
+        // ยัดสติ๊กเกอร์โปรไฟล์เข้าข้อความในคีย์เวิร์ดทั้งหมด
+        const messagesWithSender = matchedReply.messages.map((msg: any) => {
+          return {
+            ...msg,
+            sender: customSender
+          };
+        });
+
+        // ส่งคำตอบจากระบบคีย์เวิร์ดกลับไป แล้วจบฟังก์ชันเลย
+        await replyMessages(event.replyToken, messagesWithSender);
+        return; 
+      }
+
+      // ==========================================================
+      // 🌟 4. ถ้าไม่เจอคีย์เวิร์ดในระบบ -> ค่อยส่งข้อความให้ Gemini (น้องกรีน) จัดการ
+      // ==========================================================
+      const geminiPrompt = `(นี่คือข้อความที่ถอดจากเสียงพูดของ User): ${cleanUserVoiceText}`;
       const aiText = await generateGeminiReply(geminiPrompt);
 
-      // 🌟 5. ตอบกลับด้วยร่างน้องกรีน
+      // ตอบกลับในร่างน้องกรีน
       await lineClient.replyMessage({
         replyToken: event.replyToken,
         messages: [
           {
             type: "text",
-            text: aiText, // ใช้ข้อความที่ Gemini คิดให้
+            text: aiText,
             sender: {
               name: "น้องกรีน 👧🏻", 
               iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
