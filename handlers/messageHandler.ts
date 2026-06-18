@@ -58,7 +58,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     if (userId) {
       await lineClient.showLoadingAnimation({
         chatId: userId,
-        loadingSeconds: 5,
+        loadingSeconds: 20,
       }).catch(console.error);
     }
 
