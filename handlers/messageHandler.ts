@@ -63,7 +63,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     }
 
     // เรียกใช้ Gemini
-    const aiText = await generateGeminiReply(userText);
+    const aiText = await generateGeminiReply(userText, userId);
     
     // 🌟 สั่งให้ตอบกลับใน "ร่างของน้องกรีน"
     // รวบ replyToken และ messages ให้อยู่ในปีกกา {} ก้อนเดียวกัน
@@ -154,7 +154,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
       // 🌟 4. ถ้าไม่เจอคีย์เวิร์ดในระบบ -> ค่อยส่งข้อความให้ Gemini (น้องกรีน) จัดการ
       // ==========================================================
       const geminiPrompt = `(นี่คือข้อความที่ถอดจากเสียงพูดของ User): ${cleanUserVoiceText}`;
-      const aiText = await generateGeminiReply(geminiPrompt);
+      const aiText = await generateGeminiReply(geminiPrompt, userId);
 
       // ตอบกลับในร่างน้องกรีน
       await lineClient.replyMessage({

@@ -58,3 +58,14 @@ model RichMenu {
 
   @@index([richMenuId])
 }
+
+model ChatHistory {
+  id        String   @id @default(uuid())
+  lineId    String   // ไอดีของคนคุย (จาก LINE)
+  role      String   // ระบุว่าเป็น "user" (คนพิมพ์) หรือ "model" (บอทตอบ)
+  message   String   // ข้อความที่คุยกัน
+  createdAt DateTime @default(now())
+
+  // สร้าง Index เพื่อให้การค้นหาประวัติและลบประวัติเก่าทำได้เร็วขึ้น
+  @@index([lineId, createdAt])
+}

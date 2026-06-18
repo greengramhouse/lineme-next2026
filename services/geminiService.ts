@@ -1,11 +1,12 @@
 // src/services/geminiService.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { prisma } from "@/lib/prisma";
 
 // ดึง API Key จาก .env
 const apiKey = process.env.GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(apiKey);
 
-export async function generateGeminiReply(userText: string): Promise<string> {
+export async function generateGeminiReply(userText: string, userId?: string): Promise<string> {
   try {
     // 🌟 1. กำหนด System Prompt (บุคลิกของน้องกรีน)
     const systemPrompt = `
@@ -61,9 +62,51 @@ export async function generateGeminiReply(userText: string): Promise<string> {
       systemInstruction: systemPrompt,
     });
 
-    // โยนข้อความของผู้ใช้ไปให้น้องกรีนคิด
-    const result = await model.generateContent(userText);
+    let history: any[] = [];
+    if (userId) {
+      // 2.1 ลบประวัติแชทที่เก่าเกิน 30 นาที (Auto-Cleanup)
+      const THIRTY_MINUTES = 30 * 60 * 1000;
+      const thirtyMinsAgo = new Date(Date.now() - THIRTY_MINUTES);
+      
+      await prisma.chatHistory.deleteMany({
+        where: {
+          lineId: userId,
+          createdAt: {
+            lt: thirtyMinsAgo,
+          },
+        },
+      });
+
+      // 2.2 ดึงประวัติที่เหลือมาแปลงเป็นรูปแบบที่ Gemini เข้าใจ
+      const chatRecords = await prisma.chatHistory.findMany({
+        where: { lineId: userId },
+        orderBy: { createdAt: "asc" },
+      });
+      
+      history = chatRecords.map((record) => ({
+        role: record.role,
+        parts: [{ text: record.message }],
+      }));
+    }
+
+    // 🌟 3. เริ่ม Chat Session พร้อมประวัติ
+    const chat = model.startChat({
+      history: history,
+    });
+
+    // 🌟 4. โยนข้อความของผู้ใช้ไปให้น้องกรีนคิด
+    const result = await chat.sendMessage(userText);
     const responseText = result.response.text();
+
+    // 🌟 5. บันทึกคำถามและคำตอบล่าสุดลง Database
+    if (userId) {
+      await prisma.chatHistory.createMany({
+        data: [
+          { lineId: userId, role: "user", message: userText },
+          { lineId: userId, role: "model", message: responseText },
+        ],
+      });
+    }
 
     return responseText;
   } catch (error) {
