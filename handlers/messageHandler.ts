@@ -11,7 +11,7 @@ import { processTyphoonASR } from "@/services/typhoon";
 
 export async function handleMessageEvent(event: webhook.MessageEvent) {
   if (!event.replyToken) return;
-  
+
   const userId = event.source?.userId;
   if (userId) {
     updateProfileInBackground(userId).catch(console.error);
@@ -23,7 +23,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     // 1. นำข้อความไปเช็คในฐานข้อมูล
     const matchedReply = await findMatchedReply(userText.toLowerCase());
 
-// 2. ถ้าเจอคำตอบในฐานข้อมูล
+    // 2. ถ้าเจอคำตอบในฐานข้อมูล
     if (matchedReply) {
       if (matchedReply.showLoading && userId) {
         await lineClient.showLoadingAnimation({
@@ -34,7 +34,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
       // 🌟 สร้างโปรไฟล์จำแลงที่ต้องการ (เช่น เปลี่ยนเป็นน้องกรีน หรือ ชื่อโรงเรียน)
       const customSender = {
-        name: "น้องโปรแกรม 👦🏻", 
+        name: "น้องโปรแกรม 👦🏻",
         iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
       };
 
@@ -48,13 +48,13 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
       // โยนข้อความที่ถูกอัปเกรดแล้ว ไปให้ฟังก์ชันตอบกลับ
       await replyMessages(event.replyToken, messagesWithSender);
-      return; 
+      return;
     }
 
-// ==========================================
+    // ==========================================
     // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini (น้องกรีน) จัดการ!
     // ==========================================
-    
+
     if (userId) {
       await lineClient.showLoadingAnimation({
         chatId: userId,
@@ -64,7 +64,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
     // เรียกใช้ Gemini
     const aiText = await generateGeminiReply(userText, userId);
-    
+
     // 🌟 สั่งให้ตอบกลับใน "ร่างของน้องกรีน"
     // รวบ replyToken และ messages ให้อยู่ในปีกกา {} ก้อนเดียวกัน
     await lineClient.replyMessage({
@@ -96,7 +96,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
     try {
       // 🌟 2. โหลดไฟล์เสียงจาก LINE (รองรับทั้ง Blob และ Stream)
       const audioContent = await lineBlobClient.getMessageContent(messageId);
-      
+
       let audioBuffer: Buffer;
       if (typeof (audioContent as any).arrayBuffer === "function") {
         const arrayBuf = await (audioContent as any).arrayBuffer();
@@ -133,7 +133,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
       if (matchedReply) {
         // สร้างโปรไฟล์จำแลงของน้องโปรแกรม
         const customSender = {
-          name: "น้องโปรแกรม 👦🏻", 
+          name: "น้องโปรแกรม 👦🏻",
           iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
         };
 
@@ -147,7 +147,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
         // ส่งคำตอบจากระบบคีย์เวิร์ดกลับไป แล้วจบฟังก์ชันเลย
         await replyMessages(event.replyToken, messagesWithSender);
-        return; 
+        return;
       }
 
       // ==========================================================
@@ -164,7 +164,7 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
             type: "text",
             text: aiText,
             sender: {
-              name: "น้องกรีน 👧🏻", 
+              name: "น้องกรีน 👧🏻",
               iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
             }
           }

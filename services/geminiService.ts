@@ -56,18 +56,12 @@ export async function generateGeminiReply(userText: string, userId?: string): Pr
       - ห้ามตอบคำถามที่ไม่เกี่ยวข้องกับโรงเรียน เช่น เรื่องทั่วไปที่ไม่เกี่ยวกับข้อมูลพื้นฐานของโรงเรียน
     `;
 
-    // 🌟 2. ใส่ systemInstruction เข้าไปใน Model
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
-      systemInstruction: systemPrompt,
-    });
-
     let history: any[] = [];
     if (userId) {
       // 2.1 ลบประวัติแชทที่เก่าเกิน 30 นาที (Auto-Cleanup)
       const THIRTY_MINUTES = 30 * 60 * 1000;
       const thirtyMinsAgo = new Date(Date.now() - THIRTY_MINUTES);
-      
+
       await prisma.chatHistory.deleteMany({
         where: {
           lineId: userId,
@@ -82,21 +76,37 @@ export async function generateGeminiReply(userText: string, userId?: string): Pr
         where: { lineId: userId },
         orderBy: { createdAt: "asc" },
       });
-      
+
       history = chatRecords.map((record) => ({
         role: record.role,
         parts: [{ text: record.message }],
       }));
     }
 
-    // 🌟 3. เริ่ม Chat Session พร้อมประวัติ
-    const chat = model.startChat({
-      history: history,
-    });
+    let responseText = "";
 
-    // 🌟 4. โยนข้อความของผู้ใช้ไปให้น้องกรีนคิด
-    const result = await chat.sendMessage(userText);
-    const responseText = result.response.text();
+    try {
+      // 🌟 2. ลองเรียกใช้รุ่น Lite (gemini-2.5-flash-lite) ก่อน
+      const modelLite = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash-lite",
+        systemInstruction: systemPrompt,
+      });
+      const chatLite = modelLite.startChat({ history });
+      const resultLite = await chatLite.sendMessage(userText);
+      responseText = resultLite.response.text();
+
+    } catch (liteError: any) {
+      console.warn("gemini-2.5-flash-lite failed (possibly 503), falling back to gemini-2.5-flash. Error:", liteError.message);
+      
+      // 🌟 3. ถ้า Lite มีปัญหาคิวเต็ม (503) หรือพัง สลับไปใช้รุ่นธรรมดาแทน
+      const modelFlash = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        systemInstruction: systemPrompt,
+      });
+      const chatFlash = modelFlash.startChat({ history });
+      const resultFlash = await chatFlash.sendMessage(userText);
+      responseText = resultFlash.response.text();
+    }
 
     // 🌟 5. บันทึกคำถามและคำตอบล่าสุดลง Database
     if (userId) {
