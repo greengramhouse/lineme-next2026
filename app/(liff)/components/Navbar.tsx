@@ -73,8 +73,7 @@ export default function Navbar() {
 
             {/* Avatar */}
             <div
-              className="relative w-9 h-9 rounded-full overflow-hidden ring-2 ring-white/60 ring-offset-1"
-              style={{ ringOffsetColor: "transparent" }}
+              className="relative w-9 h-9 rounded-full overflow-hidden ring-2 ring-white/60"
             >
               {profile.pictureUrl ? (
                 <Image
