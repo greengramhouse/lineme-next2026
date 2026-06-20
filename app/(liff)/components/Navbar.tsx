@@ -4,7 +4,10 @@ import Image from "next/image";
 import { useLiffStore } from "../store/liffStore";
 
 export default function Navbar() {
-  const { profile, isLoggedIn, isLiffReady } = useLiffStore();
+  const profile = useLiffStore((state) => state.profile);
+  const isLoggedIn = useLiffStore((state) => state.isLoggedIn);
+  const isLiffReady = useLiffStore((state) => state.isLiffReady);
+
 
   return (
     <nav
