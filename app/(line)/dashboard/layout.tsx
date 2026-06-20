@@ -1,7 +1,7 @@
 import Navbar from "@/app/components/Navbar";
 import { Metadata } from "next";
 
-export const metadata:Metadata = {
+export const metadata: Metadata = {
   title: "Dashboard Lineme",
 };
 
@@ -11,9 +11,12 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="h-screen w-full">
+    <div className="min-h-screen bg-slate-50">
       <Navbar />
-      {children}
+      {/* Main content area — offset on desktop for sidebar */}
+      <main className="lg:pl-64 pt-16 lg:pt-0 min-h-screen">
+        {children}
+      </main>
     </div>
   );
 }

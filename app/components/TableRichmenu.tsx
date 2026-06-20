@@ -56,50 +56,70 @@ export default function TableRichmenu({ initialData }: { initialData: RichMenuIt
   };
 
   return (
-    <div>
-      <div className="flex justify-end mb-4">
+    <div className="space-y-4">
+      {/* Header with Add button */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-500">
+          ทั้งหมด <span className="font-semibold text-slate-700">{initialData.length}</span> รายการ
+        </p>
         <button
           onClick={handleAddNew}
-          className="bg-green-600 text-white px-4 py-2 rounded-md shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition"
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-200 hover:shadow-emerald-300 hover:from-emerald-600 hover:to-teal-600 transition-all duration-200 active:scale-[0.98]"
         >
-          + Add Rich Menu
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add Rich Menu
         </button>
       </div>
 
-      <div className="overflow-x-auto bg-white rounded-lg shadow border border-gray-200 w-full p-4">
-        <table className="min-w-full text-sm text-left text-gray-500">
-          <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
-            <tr>
-              <th className="px-6 py-4 font-bold">Preview</th>
-              <th className="px-6 py-4 font-bold">Name</th>
-              <th className="px-6 py-4 font-bold">Rich Menu ID</th> 
-              <th className="px-6 py-4 font-bold">Status</th>
-              <th className="px-6 py-4 font-bold">Created At</th>
-              <th className="px-6 py-4 font-bold text-center">Actions</th>
+      {/* Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50/80">
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Preview</th>
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Name</th>
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Rich Menu ID</th>
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+              <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Created At</th>
+              <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {initialData.length > 0 ? (
               initialData.map((item) => (
-                <tr key={item.id} className="border-b hover:bg-gray-50 transition">
+                <tr key={item.id} className="group hover:bg-slate-50/70 transition-colors duration-150">
+                  {/* Preview Image */}
                   <td className="px-6 py-4">
-                    <img 
-                      src={item.imageUrl} 
-                      alt={item.name} 
-                      className="w-24 h-auto object-cover rounded shadow-sm border"
-                    />
+                    <div className="overflow-hidden rounded-xl border border-slate-200/80 shadow-sm group-hover:shadow-md group-hover:border-slate-300 transition-all duration-200 w-28">
+                      <img 
+                        src={item.imageUrl} 
+                        alt={item.name} 
+                        className="w-full h-auto object-cover"
+                      />
+                    </div>
                   </td>
-                  <td className="px-6 py-4 font-medium text-gray-900">{item.name}</td>
+
+                  {/* Name */}
+                  <td className="px-6 py-4">
+                    <span className="font-semibold text-slate-800">{item.name}</span>
+                  </td>
                   
+                  {/* Rich Menu ID */}
                   <td className="px-6 py-4">
                     {item.richMenuId ? (
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs text-gray-600 truncate max-w-30" title={item.richMenuId}>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1 font-mono text-xs text-slate-600 truncate max-w-[180px]" title={item.richMenuId}>
                           {item.richMenuId}
                         </span>
                         <button
                           onClick={() => handleCopy(item.richMenuId!)}
-                          className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-600 transition flex items-center justify-center"
+                          className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs transition-all duration-200 ${
+                            copiedId === item.richMenuId 
+                              ? "bg-green-100 text-green-600" 
+                              : "bg-slate-100 hover:bg-slate-200 text-slate-500"
+                          }`}
                           title="คัดลอก ID"
                         >
                           {/* สลับไอคอนเมื่อกด Copy */}
@@ -107,25 +127,41 @@ export default function TableRichmenu({ initialData }: { initialData: RichMenuIt
                         </button>
                       </div>
                     ) : (
-                      <span className="text-gray-400 italic text-xs">ไม่มีข้อมูล</span>
+                      <span className="text-slate-400 italic text-xs">ไม่มีข้อมูล</span>
                     )}
                   </td>
 
+                  {/* Status */}
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      item.isDefault ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-gray-100 text-gray-800'
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                      item.isDefault 
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200/80' 
+                        : 'bg-slate-100 text-slate-600 border border-slate-200/80'
                     }`}>
-                      {item.isDefault ? "🌟 Default Menu" : "Normal"}
+                      {item.isDefault && (
+                        <span className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
+                        </span>
+                      )}
+                      {item.isDefault ? "Default Menu" : "Normal"}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    {new Date(item.createdAt).toLocaleDateString("th-TH")}
+
+                  {/* Created At */}
+                  <td className="px-6 py-4 text-slate-500 text-xs">
+                    {new Date(item.createdAt).toLocaleDateString("th-TH", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </td>
                   
-                  <td className="px-6 py-4 text-center space-x-3">
+                  {/* Actions */}
+                  <td className="px-6 py-4 text-center">
                     <button 
                       onClick={() => handleDelete(item.id, item.richMenuId)}
-                      className="font-medium text-red-600 hover:text-red-800 transition"
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
                     >
                       Delete
                     </button>
@@ -134,8 +170,16 @@ export default function TableRichmenu({ initialData }: { initialData: RichMenuIt
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                  ยังไม่มีข้อมูล Rich Menu ในระบบ
+                <td colSpan={6} className="px-6 py-16 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                      <svg className="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                      </svg>
+                    </div>
+                    <p className="text-slate-500 font-medium">ยังไม่มีข้อมูล Rich Menu ในระบบ</p>
+                    <p className="text-xs text-slate-400">กดปุ่ม &quot;Add Rich Menu&quot; เพื่อเพิ่มเมนูใหม่</p>
+                  </div>
                 </td>
               </tr>
             )}
@@ -143,16 +187,17 @@ export default function TableRichmenu({ initialData }: { initialData: RichMenuIt
         </table>
       </div>
 
+      {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in-95 duration-200 p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative p-6 ring-1 ring-slate-200/50">
             <button 
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center transition"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl w-8 h-8 flex items-center justify-center transition"
             >
               ✕
             </button>
-            <h2 className="text-xl font-bold mb-4 text-gray-800">Add New Rich Menu</h2>
+            <h2 className="text-xl font-bold mb-4 text-slate-800">Add New Rich Menu</h2>
             
             <FormRichmenu onSuccess={() => { 
               setIsModalOpen(false); 
