@@ -8,7 +8,6 @@ export default function Navbar() {
   const isLoggedIn = useLiffStore((state) => state.isLoggedIn);
   const isLiffReady = useLiffStore((state) => state.isLiffReady);
 
-
   return (
     <nav
       className="sticky top-0 z-50 w-full"
@@ -60,14 +59,18 @@ export default function Navbar() {
         ) : isLoggedIn && profile ? (
           /* Profile display */
           <div className="flex items-center gap-2.5">
-            <div className="text-right hidden xs:block">
+            <div className="text-right">
               <p
                 className="text-white text-sm font-semibold leading-tight"
                 style={{ textShadow: "0 1px 3px rgba(0,0,0,0.2)" }}
               >
                 {profile.displayName}
               </p>
-              {profile.statusMessage && (
+              {profile.email ? (
+                <p className="text-green-100 text-xs truncate max-w-[120px]" title={profile.email}>
+                  {profile.email}
+                </p>
+              ) : profile.statusMessage && (
                 <p className="text-green-100 text-xs truncate max-w-[120px]">
                   {profile.statusMessage}
                 </p>

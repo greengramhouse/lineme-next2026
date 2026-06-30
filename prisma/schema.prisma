@@ -21,6 +21,8 @@ model User {
   displayName   String
   pictureUrl    String?  // เผื่อบางคนไม่ได้ตั้งรูปโปรไฟล์
   statusMessage String?  // สเตตัสที่ตั้งใน LINE
+  email         String?  // อีเมลที่ผูกกับ LINE
+  userName      String?  // ชื่อที่ตั้งใน การลงทะเบียน
   isFollowing   Boolean  @default(true)       // สถานะว่ายังติดตามบอทอยู่ไหม
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

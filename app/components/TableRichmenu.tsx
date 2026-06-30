@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import FormRichmenu from "./FormRichmenu";
 
 interface RichMenuItem {
@@ -18,6 +19,11 @@ export default function TableRichmenu({ initialData }: { initialData: RichMenuIt
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null); // 🌟 State สำหรับเก็บ ID ที่เพิ่งก๊อปปี้
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleAddNew = () => {
     setIsModalOpen(true);
@@ -188,24 +194,42 @@ export default function TableRichmenu({ initialData }: { initialData: RichMenuIt
       </div>
 
       {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative p-6 ring-1 ring-slate-200/50">
-            <button 
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl w-8 h-8 flex items-center justify-center transition"
-            >
-              ✕
-            </button>
-            <h2 className="text-xl font-bold mb-4 text-slate-800">Add New Rich Menu</h2>
-            
-            <FormRichmenu onSuccess={() => { 
-              setIsModalOpen(false); 
-              router.refresh(); 
-            }} />
-            
+      {isMounted && isModalOpen && createPortal(
+        <div className="relative z-[100]" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+          {/* Backdrop */}
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsModalOpen(false)}></div>
+
+          {/* Scrollable Container */}
+          <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+              
+              {/* Modal Panel */}
+              <div className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl ring-1 ring-slate-200/50">
+                
+                {/* Header (Sticky so it stays visible when scrolling down) */}
+                <div className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-100 bg-white p-6 pb-4">
+                  <h2 className="text-xl font-bold text-slate-800" id="modal-title">Add New Rich Menu</h2>
+                  <button 
+                    onClick={() => setIsModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl w-8 h-8 flex items-center justify-center transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                {/* Body */}
+                <div className="p-6 bg-white">
+                  <FormRichmenu onSuccess={() => { 
+                    setIsModalOpen(false); 
+                    router.refresh(); 
+                  }} />
+                </div>
+                
+              </div>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

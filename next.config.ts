@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  allowedDevOrigins: ['monorail-example-zesty.ngrok-free.dev'],
 };
 
 export default nextConfig;

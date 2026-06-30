@@ -8,9 +8,77 @@ interface UserItem {
   displayName: string;
   pictureUrl: string | null;
   statusMessage: string | null;
+  email: string | null;
+  userName: string | null;
   isFollowing: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+function RichMenuSetter({ lineId }: { lineId: string }) {
+  const [richMenuId, setRichMenuId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleSetDefault = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/richmenu/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineId, richMenuId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("ตั้งค่า Rich Menu สำเร็จ");
+        setIsOpen(false);
+      } else {
+        alert("เกิดข้อผิดพลาด: " + data.error);
+      }
+    } catch (err) {
+      alert("ไม่สามารถตั้งค่า Rich Menu ได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) {
+    return (
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="px-3 py-1.5 bg-violet-50 text-violet-600 hover:bg-violet-100 rounded-lg text-xs font-semibold border border-violet-200 transition-colors"
+      >
+        ตั้งค่าเมนู
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 min-w-[200px]">
+      <input 
+        type="text" 
+        placeholder="ใส่ Rich Menu ID หรือเว้นว่างเพื่อยกเลิก" 
+        value={richMenuId}
+        onChange={(e) => setRichMenuId(e.target.value)}
+        className="w-full px-2 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-violet-500 outline-none"
+      />
+      <div className="flex gap-1">
+        <button 
+          onClick={handleSetDefault}
+          disabled={loading}
+          className="flex-1 px-2 py-1 bg-violet-600 text-white rounded text-xs hover:bg-violet-700 disabled:opacity-50"
+        >
+          {loading ? "รอ..." : "บันทึก"}
+        </button>
+        <button 
+          onClick={() => setIsOpen(false)}
+          className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs hover:bg-slate-200"
+        >
+          ยกเลิก
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function TableUserProfile({
@@ -29,6 +97,8 @@ export default function TableUserProfile({
       const matchesSearch =
         user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.lineId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (user.userName &&
+          user.userName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (user.statusMessage &&
           user.statusMessage
             .toLowerCase()
@@ -199,6 +269,9 @@ export default function TableUserProfile({
                     )}
                   </div>
                   <p className="mt-0.5 font-mono text-[11px] text-slate-400 truncate">{user.lineId}</p>
+                  {user.userName && (
+                    <p className="mt-1 text-xs font-semibold text-violet-700 truncate">{user.userName}</p>
+                  )}
                   {user.statusMessage && (
                     <p className="mt-1 text-xs text-slate-500 italic truncate">&ldquo;{user.statusMessage}&rdquo;</p>
                   )}
@@ -254,6 +327,9 @@ export default function TableUserProfile({
               <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                 LINE ID
               </th>
+              <th className="hidden lg:table-cell px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                ชื่อที่ลงทะเบียน
+              </th>
               <th className="hidden md:table-cell px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                 สเตตัส
               </th>
@@ -262,6 +338,9 @@ export default function TableUserProfile({
               </th>
               <th className="hidden lg:table-cell px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                 เข้าร่วมเมื่อ
+              </th>
+              <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">
+                เมนูส่วนตัว
               </th>
             </tr>
           </thead>
@@ -299,6 +378,15 @@ export default function TableUserProfile({
                     <span className="inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1 font-mono text-xs text-slate-600 group-hover:bg-violet-100 group-hover:text-violet-700 transition max-w-[180px] truncate">
                       {user.lineId}
                     </span>
+                  </td>
+
+                  {/* UserName */}
+                  <td className="hidden lg:table-cell px-6 py-4">
+                    {user.userName ? (
+                      <span className="font-semibold text-slate-700 text-sm">{user.userName}</span>
+                    ) : (
+                      <span className="text-slate-300 text-xs">— ยังไม่ลงทะเบียน —</span>
+                    )}
                   </td>
 
                   {/* Status Message */}
@@ -350,11 +438,16 @@ export default function TableUserProfile({
                       })}
                     </span>
                   </td>
+
+                  {/* Rich Menu Setter */}
+                  <td className="px-6 py-4 text-center">
+                    <RichMenuSetter lineId={user.lineId} />
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="px-6 py-16 text-center">
+                <td colSpan={6} className="px-6 py-16 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
                       <svg className="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
