@@ -9,7 +9,7 @@ export default async function UserProfilePage() {
 
   return (
     <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-[1400px] mx-auto">
 
         {/* ส่วนหัว (Header Section) */}
         <div className="mb-8">
