@@ -61,6 +61,17 @@ model RichMenu {
   @@index([richMenuId])
 }
 
+// กัน LINE ส่ง event ซ้ำ (retry / redelivery) แล้วระบบทำงานซ้ำ
+// ทุก event ที่ LINE ส่งมามี webhookEventId ที่ไม่ซ้ำกัน ใช้เป็น dedup key ได้เลย
+// ถ้าไม่มีตารางนี้ event ที่ถูกส่งซ้ำจะเรียก Gemini ใหม่ + เขียน ChatHistory ซ้ำ
+model ProcessedEvent {
+  webhookEventId String   @id                    // ใช้เป็น PK เลย = ได้ unique index ในตัว
+  processedAt    DateTime @default(now())
+
+  // สำหรับงานล้างแถวเก่า
+  @@index([processedAt])
+}
+
 model ChatHistory {
   id        String   @id @default(uuid())
   lineId    String   // ไอดีของคนคุย (จาก LINE)

@@ -192,38 +192,64 @@ export async function POST(req: NextRequest) {
 
 ---
 
-## Phase 3 — ต้องตัดสินใจก่อนลงมือ ⚠️
+## Phase 3 — ข้อที่ต้องตัดสินใจ
 
-> **3 ข้อนี้ blocked** — ต้องได้คำตอบจากเจ้าของโปรเจกต์ก่อน ไม่ควรเดาแล้วทำไปเลย
+> **ตัดสินใจแล้วเมื่อ 2026-08-16:** ทำ **H3** เท่านั้น · **H6 / H7 เลื่อนไปก่อน** (ยังไม่ deploy จริง)
 
-### H3 — Idempotency / redelivery — *ข้อเดียวที่ต้อง migrate DB*
+### H3 — Idempotency / redelivery ✅ — *ข้อเดียวที่ต้อง migrate DB*
 
-- [ ] **3.1** **[ตัดสินใจ]** เลือกวิธีเก็บ dedup key: ตาราง `ProcessedEvent` ใหม่ใน Prisma หรือใช้ in-memory/Redis
-- [ ] **3.2** เพิ่ม model + unique index บน `webhookEventId` ใน `prisma/schema.prisma`
-- [ ] **3.3** รัน `prisma migrate` (ใช้ `DATABASE_URL` / `DIRECT_URL` ที่มีอยู่แล้ว)
-- [ ] **3.4** อ่าน `event.deliveryContext.isRedelivery` และ header `X-Line-Retry-Key` ใน route
-- [ ] **3.5** ข้าม event ที่เคยประมวลผลแล้ว → กัน Gemini ถูกเรียกซ้ำ + `ChatHistory` ซ้ำ
-- [ ] **3.6** เพิ่มการล้างแถวเก่า (event เกิน N วัน) กันตารางบวม
+- [x] **3.1** **[ตัดสินใจแล้ว]** ใช้ตาราง `ProcessedEvent` ใน Prisma (ไม่ใช่ in-memory)
+      เพราะทนต่อการ restart และใช้ได้แม้มีหลาย instance ตอน deploy จริง
+- [x] **3.2** เพิ่ม model `ProcessedEvent` ใน `prisma/schema.prisma`
+      ใช้ `webhookEventId` เป็น `@id` เลย → ได้ unique index ในตัว ไม่ต้องประกาศเพิ่ม
+- [x] **3.3** รัน migration → `prisma/migrations/20260816071614_add_processed_event`
+      (ผ่าน `DIRECT_URL` ตามที่ `prisma.config.ts` ตั้งไว้)
+- [x] **3.4** อ่าน `event.deliveryContext.isRedelivery` และ header `X-Line-Retry-Key` แล้ว log ทั้งคู่
+- [x] **3.5** สร้าง `services/idempotencyService.ts` → `claimEvent()` ข้าม event ที่เคยประมวลผลแล้ว
+      ใช้ `createMany` + `skipDuplicates` เป็น atomic operation เดียว
+      (ถ้าใช้ `findUnique` แล้วค่อย `create` จะมีช่องว่างให้ event ที่มาพร้อมกันแทรกได้)
+- [x] **3.6** `cleanupProcessedEvents()` ล้างแถวเก่ากว่า 3 วัน มี throttle ในตัวชั่วโมงละครั้ง
+      เรียกท้าย `after()` ของ route
 
-### H6 — Admin API routes ไม่มี auth เลย
+> **ข้อออกแบบที่ควรรู้:** `claimEvent()` เป็นแบบ **fail-open** — ถ้า DB ล่มจะคืน `true`
+> คือยอมให้ประมวลผลซ้ำ ดีกว่าบอทเงียบไปเฉย ๆ ถ้าอยากให้ fail-closed แทน บอกได้
+
+#### ✅ ตรวจรับ H3 — ผ่าน 4/4 (`scripts/phase3-idempotency-test.ts`)
+
+- [x] รอบแรก → บันทึกลง `ProcessedEvent` และประมวลผลจริง (`ChatHistory` = 2 แถว)
+- [x] รอบสอง ยิง `webhookEventId` เดิม + `isRedelivery: true` + `X-Line-Retry-Key` → ตอบ 200 ปกติ
+- [x] `ChatHistory` ยังเป็น 2 แถวเท่าเดิม = **Gemini ไม่ถูกเรียกซ้ำ โควตาไม่ไหม้**
+- [x] `ProcessedEvent` มีแถวเดียว ไม่ซ้ำ
+- [x] log ขึ้นครบ: `เป็นการส่งซ้ำจาก LINE (retry key: ...)` และ `ข้าม event ... (isRedelivery = true)`
+
+---
+
+### 🔒 H6 / H7 — เลื่อนไปก่อนตามที่ตัดสินใจ
+
+> **เหตุผล:** ยังไม่ deploy จริง เข้าถึงได้แค่ผ่าน ngrok ที่เปิดเองเท่านั้น
+> **แต่ต้องทำก่อน deploy แน่นอน** — ทั้งคู่คือช่องให้คนนอกเขียนข้อมูลได้
+
+#### H6 — Admin API routes ไม่มี auth เลย
 
 ไฟล์: `app/api/keywords/route.ts`, `app/api/keywords/[id]/route.ts`,
 `app/api/richmenu/route.ts`, `app/api/richmenu/[id]/route.ts`, `app/api/richmenu/link/route.ts`
 
-- [ ] **3.7** **[ตัดสินใจ]** เลือกรูปแบบ auth — ตอนนี้โปรเจกต์**ไม่มีระบบ auth ใด ๆ เลย**
-      ตัวเลือก: (ก) shared secret header ง่าย ๆ (ข) login จริง เช่น NextAuth (ค) จำกัดด้วย LIFF ID token
+- [ ] **3.7** เลือกรูปแบบ auth — โปรเจกต์นี้**ไม่มีระบบ auth ใด ๆ เลย** (ไม่มี middleware, ไม่มี session)
+      ตัวเลือกที่คุยกันไว้: (ก) shared secret header (ข) NextAuth login จริง (ค) allowlist LINE userId ผ่าน LIFF ID token
 - [ ] **3.8** ใส่การตรวจสิทธิ์ในทั้ง 5 route
 - [ ] **3.9** ตรวจว่าหน้า dashboard ฝั่ง client ยังเรียก API ได้หลังใส่ auth
 - [ ] **3.10** ยิง route โดยไม่มี credential → ต้องได้ 401
 
-### H7 — Server action เชื่อ `lineId` ที่ client ส่งมา
+#### H7 — Server action เชื่อ `lineId` ที่ client ส่งมา
 
-ไฟล์: `app/actions/userAction.ts`
+ไฟล์: `app/actions/userAction.ts` — ใครก็ยิง action นี้พร้อม `lineId` ของคนอื่นเพื่อเขียนทับข้อมูลได้
 
 - [ ] **3.11** เปลี่ยนฝั่ง LIFF ให้ส่ง ID token (`liff.getIDToken()`) แทนการส่ง `lineId` ตรง ๆ
 - [ ] **3.12** ฝั่ง server verify กับ `https://api.line.me/oauth2/v2.1/verify` แล้วดึง `sub` มาใช้เป็น `lineId`
 - [ ] **3.13** เอาพารามิเตอร์ `lineId` ออกจาก signature ของ `saveUserNameAction` ทั้งหมด
 - [ ] **3.14** ทดสอบว่ายิง action ด้วย token ของคนอื่นแล้วเขียนทับข้อมูลไม่ได้แล้ว
+
+> ถ้าเลือกทางเลือก (ค) ของ H6 จะใช้โค้ด verify ตัวเดียวกับ H7 ได้เลย ทำทีเดียวจบทั้งสองข้อ
 
 ---
 
@@ -291,6 +317,7 @@ export async function POST(req: NextRequest) {
 | `webhook-signature-test.mjs` | 401 / 400 / 200, response time, batch events, group event | `node scripts/webhook-signature-test.mjs` |
 | `phase2-test.ts` | unfollow, self-heal, throttle (updatedAt สด) | `npx tsx --env-file=.env scripts/phase2-test.ts` |
 | `phase2-throttle-test.ts` | throttle อีกด้าน (updatedAt เก่า 72 ชม.) | `npx tsx --env-file=.env scripts/phase2-throttle-test.ts` |
+| `phase3-idempotency-test.ts` | ยิง event ซ้ำ (retry) ต้องประมวลผลครั้งเดียว | `npx tsx --env-file=.env scripts/phase3-idempotency-test.ts` |
 | `phase4-cache-test.ts` | cache กฎ CONTAINS + invalidate (ไม่ต้องเปิด dev server) | `npx tsx --env-file=.env scripts/phase4-cache-test.ts` |
 
 สคริปต์เซ็น HMAC ด้วย `CHANNEL_SECRET` จาก `.env` เอง และล้างข้อมูลทดสอบใน DB ให้หลังรันเสร็จ
