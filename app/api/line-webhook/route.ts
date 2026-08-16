@@ -4,6 +4,7 @@ import { validateSignature, webhook } from "@line/bot-sdk";
 import { channelSecret } from "@/config/line-config";
 import { handleLineEvent } from "@/handlers";
 import { claimEvent, cleanupProcessedEvents } from "@/services/idempotencyService";
+import { cleanupExpiredFlows } from "@/services/documentFlowService";
 
 // จำเป็นต้องเป็น Node runtime: validateSignature ใช้ node:crypto และ audio path ใช้ Buffer
 export const runtime = "nodejs";
@@ -70,6 +71,8 @@ export async function POST(req: NextRequest) {
 
       // ล้างแถวเก่าใน ProcessedEvent (มี throttle ในตัว อย่างมากชั่วโมงละครั้ง)
       await cleanupProcessedEvents();
+      // ล้าง state ร่างเอกสารที่ครูค้างไว้เกิน 30 นาที
+      await cleanupExpiredFlows();
     });
   }
 

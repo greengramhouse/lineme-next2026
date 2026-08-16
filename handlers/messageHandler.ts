@@ -5,7 +5,13 @@ import { lineBlobClient, lineClient } from "@/config/line-config";
 import { SENDER_GREEN, SENDER_PROGRAM, withSender } from "@/config/senders";
 import { findMatchedReply } from "@/services/replyRuleService";
 import { updateProfileInBackground } from "@/services/userService";
-import { replyMessages, replyOrPush } from "@/services/replyService";
+import {
+  replyMessages,
+  replyOrPush,
+  pushMessages,
+  splitForLine,
+} from "@/services/replyService";
+import { handleFlowMessage } from "@/services/documentFlowService";
 
 // 🌟 นำเข้า Gemini Service ที่เราเพิ่งสร้าง
 import { generateGeminiReply } from "@/services/geminiService";
@@ -93,6 +99,31 @@ async function handleTextMessage(
   const replyToken = event.replyToken!;
 
   try {
+    // ==========================================================
+    // 0. ระบบร่างเอกสารต้องมาก่อนทุกอย่าง
+    //
+    // ถ้าครูกำลังกรอกข้อมูลอยู่ คำตอบอย่าง "วันที่ 5 มีนาคม" ต้องถูกเก็บเป็น
+    // คำตอบของช่องนั้น ไม่ใช่หลุดไปตรงกับ keyword อื่นแล้วบอทตอบมั่ว
+    // ==========================================================
+    const flow = await handleFlowMessage(userId, userText);
+
+    if (flow.prompt) {
+      // กรอกครบและยืนยันแล้ว — ตอบรับก่อนแล้วค่อยให้ Gemini ร่าง
+      await replyMessages(replyToken, flow.messages ?? []);
+      await showLoadingSafely(event, 60);
+
+      const draft = await generateGeminiReply(flow.prompt, userId);
+
+      // reply token ใช้ไปกับข้อความ "กำลังร่าง..." แล้ว ตัวเอกสารจึงต้องส่งด้วย push
+      await pushMessages(userId, splitForLine(draft, SENDER_GREEN));
+      return;
+    }
+
+    if (flow.messages) {
+      await replyMessages(replyToken, flow.messages);
+      return;
+    }
+
     // 1. นำข้อความไปเช็คในฐานข้อมูล
     const matchedReply = await findMatchedReply(userText.toLowerCase());
 

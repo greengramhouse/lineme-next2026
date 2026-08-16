@@ -62,6 +62,66 @@ model RichMenu {
 }
 
 // ===========================================================================
+// ระบบร่างเอกสารแบบถาม-ตอบทีละขั้น
+//
+// ปัญหาที่แก้: ถ้าให้ครูพิมพ์ prompt เอง ผลลัพธ์จะไม่สม่ำเสมอและมักขาดข้อมูล
+// ระบบนี้ถามทีละช่องจนครบ แล้วค่อยประกอบ prompt ให้ Gemini เอง
+// ครูไม่ต้องรู้จัก prompt เลย
+//
+// แอดมินเพิ่ม/แก้ประเภทเอกสารและคำถามได้เองจาก /dashboard/document
+// ===========================================================================
+
+model DocumentType {
+  id             String  @id @default(uuid())
+  name           String // ชื่อที่แสดงให้ครูเห็น เช่น "หนังสือขออนุญาต"
+  triggerKeyword String  @unique // คำที่ครูพิมพ์เพื่อเริ่ม เช่น "ร่างหนังสือขออนุญาต"
+  description    String? // คำอธิบายสั้น ๆ ในหน้าเลือกประเภท
+  // คำสั่งเพิ่มเติมที่จะต่อท้าย prompt เช่น รูปแบบหนังสือราชการที่ต้องการ
+  promptTemplate String
+  isActive       Boolean @default(true)
+  sortOrder      Int     @default(0)
+
+  fields    DocumentField[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([sortOrder])
+}
+
+model DocumentField {
+  id             String  @id @default(uuid())
+  documentTypeId String
+  label          String // ชื่อช่อง เช่น "เรื่อง" — ใช้ตอนสรุปและตอนประกอบ prompt
+  question       String // ประโยคที่บอทถาม เช่น "เรื่องอะไรคะ"
+  hint           String? // ตัวอย่างคำตอบ ช่วยให้ครูตอบได้ตรง
+  isRequired     Boolean @default(true)
+  sortOrder      Int     @default(0)
+
+  documentType DocumentType @relation(fields: [documentTypeId], references: [id], onDelete: Cascade)
+
+  @@index([documentTypeId, sortOrder])
+}
+
+/// สถานะการสนทนาของครูแต่ละคน — 1 คนทำได้ทีละ 1 เอกสาร จึงใช้ lineId เป็น PK
+///
+/// เก็บใน DB ไม่ใช่ memory เพราะบน Vercel จะหายตอน instance ถูกรีไซเคิล
+/// และถ้ามีหลาย instance คนละตัวจะจำสถานะคนละอย่าง
+model ConversationState {
+  lineId         String   @id
+  documentTypeId String
+  stepIndex      Int      @default(0)
+  answers        Json     @default("{}")
+  /// collecting = กำลังถามทีละช่อง, confirming = ถามยืนยันก่อนส่งให้ Gemini
+  status         String   @default("collecting")
+  /// ค้างไว้นานเกินต้องหลุดเอง ไม่งั้นครูกลับมาพิมพ์อีกทีจะโดนจับเข้าโหมดเดิม
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+// ===========================================================================
 // ความรู้และบุคลิกของน้องกรีน (Gemini system prompt)
 //
 // เดิม prompt ทั้งก้อนถูก hardcode ใน services/geminiService.ts แปลว่าเวลาโรงเรียน
