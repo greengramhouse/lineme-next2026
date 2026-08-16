@@ -62,6 +62,39 @@ model RichMenu {
 }
 
 // ===========================================================================
+// ความรู้และบุคลิกของน้องกรีน (Gemini system prompt)
+//
+// เดิม prompt ทั้งก้อนถูก hardcode ใน services/geminiService.ts แปลว่าเวลาโรงเรียน
+// เปลี่ยนเบอร์โทรหรือเวลาเรียน ต้องแก้โค้ดแล้ว deploy ใหม่
+// แยกออกเป็น 2 ส่วนโดยตั้งใจ:
+//   - BotPersona = โครงที่แทบไม่เปลี่ยน (บุคลิก ขอบเขต ข้อห้าม) แก้ได้แต่ไม่ค่อยแตะ
+//   - SchoolInfo = ข้อมูลที่เปลี่ยนจริง แยกเป็นรายหัวข้อ เปิด/ปิดทีละอันได้
+// ที่ไม่รวมเป็น textarea เดียว เพราะข้อห้ามเป็น guardrail ไม่ควรอยู่ห่างจาก
+// การเผลอ Ctrl+A ลบทิ้งแค่ครั้งเดียว
+// ===========================================================================
+
+model BotPersona {
+  // ใช้แถวเดียวตลอด ล็อก id ไว้กันเผลอสร้างหลายแถว
+  id        String   @id @default("singleton")
+  persona   String // บุคลิกและสไตล์การพูด
+  scope     String // ขอบเขตการทำงาน
+  rules     String // ข้อห้ามเด็ดขาด
+  updatedAt DateTime @updatedAt
+}
+
+model SchoolInfo {
+  id        String   @id @default(uuid())
+  topic     String   @unique // เช่น "ติดต่อ / ฉุกเฉิน"
+  content   String
+  isActive  Boolean  @default(true) // ปิดชั่วคราวได้โดยไม่ต้องลบ
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+}
+
+// ===========================================================================
 // Better Auth — บัญชีแอดมินที่ล็อกอินเข้า dashboard ผ่าน LINE Login
 //
 // ⚠️ ตั้งชื่อขึ้นต้นด้วย Admin เพราะ Better Auth ใช้ชื่อ default ว่า user/session/

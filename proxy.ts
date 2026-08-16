@@ -40,5 +40,6 @@ export const config = {
     "/dashboard/:path*",
     "/api/keywords/:path*",
     "/api/richmenu/:path*",
+    "/api/bot/:path*",
   ],
 };

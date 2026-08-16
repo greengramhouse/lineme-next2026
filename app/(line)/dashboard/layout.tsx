@@ -19,7 +19,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Navbar />
+      <Navbar admin={{ name: admin.name, image: admin.image }} />
       {/* Main content area — offset on desktop for sidebar */}
       <main className="lg:pl-64 pt-16 lg:pt-0 min-h-screen">
         {children}
