@@ -9,6 +9,29 @@ import { replyMessages } from "@/services/replyService";
 import { generateGeminiReply } from "@/services/geminiService";
 import { processTyphoonASR } from "@/services/typhoon";
 
+/**
+ * แสดง loading animation แบบปลอดภัย
+ *
+ * showLoadingAnimation ใช้ได้เฉพาะแชท 1:1 เท่านั้น แต่ในกลุ่ม/ห้องแชท
+ * event.source.userId ก็ยังมีค่า → ถ้าเช็คแค่ if (userId) จะหลุดไปยิงในกลุ่ม
+ * → LINE ตอบ 400 → SDK throw → กลายเป็น 500 → LINE retry ซ้ำ ๆ
+ *
+ * จึงต้องเช็ค source.type === "user" ด้วย และต่อ .catch() กันไว้อีกชั้น
+ */
+async function showLoadingSafely(
+  event: webhook.MessageEvent,
+  loadingSeconds: number
+) {
+  if (event.source?.type !== "user") return;
+
+  const userId = event.source.userId;
+  if (!userId) return;
+
+  await lineClient
+    .showLoadingAnimation({ chatId: userId, loadingSeconds })
+    .catch(console.error);
+}
+
 export async function handleMessageEvent(event: webhook.MessageEvent) {
   if (!event.replyToken) return;
 
@@ -20,78 +43,77 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
   if (event.message.type === "text") {
     const userText = event.message.text.trim();
 
-    // 1. นำข้อความไปเช็คในฐานข้อมูล
-    const matchedReply = await findMatchedReply(userText.toLowerCase());
+    try {
+      // 1. นำข้อความไปเช็คในฐานข้อมูล
+      const matchedReply = await findMatchedReply(userText.toLowerCase());
 
-    // 2. ถ้าเจอคำตอบในฐานข้อมูล
-    if (matchedReply) {
-      if (matchedReply.showLoading && userId) {
-        await lineClient.showLoadingAnimation({
-          chatId: userId,
-          loadingSeconds: 5,
+      // 2. ถ้าเจอคำตอบในฐานข้อมูล
+      if (matchedReply) {
+        if (matchedReply.showLoading) {
+          await showLoadingSafely(event, 5);
+        }
+
+        // 🌟 สร้างโปรไฟล์จำแลงที่ต้องการ (เช่น เปลี่ยนเป็นน้องกรีน หรือ ชื่อโรงเรียน)
+        const customSender = {
+          name: "น้องโปรแกรม 👦🏻",
+          iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
+        };
+
+        // 🌟 ใช้ .map() เพื่อแกะกล่องข้อความเดิม แล้วยัด sender เข้าไปในทุกๆ ข้อความ
+        const messagesWithSender = matchedReply.messages.map((msg: any) => {
+          return {
+            ...msg, // ก๊อปปี้ข้อมูลเดิมทั้งหมด (เช่น Flex, Text)
+            sender: customSender // เติม sender เข้าไป
+          };
         });
+
+        // โยนข้อความที่ถูกอัปเกรดแล้ว ไปให้ฟังก์ชันตอบกลับ
+        await replyMessages(event.replyToken, messagesWithSender);
+        return;
       }
 
-      // 🌟 สร้างโปรไฟล์จำแลงที่ต้องการ (เช่น เปลี่ยนเป็นน้องกรีน หรือ ชื่อโรงเรียน)
-      const customSender = {
-        name: "น้องโปรแกรม 👦🏻",
-        iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
-      };
+      // ==========================================
+      // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini (น้องกรีน) จัดการ!
+      // ==========================================
 
-      // 🌟 ใช้ .map() เพื่อแกะกล่องข้อความเดิม แล้วยัด sender เข้าไปในทุกๆ ข้อความ
-      const messagesWithSender = matchedReply.messages.map((msg: any) => {
-        return {
-          ...msg, // ก๊อปปี้ข้อมูลเดิมทั้งหมด (เช่น Flex, Text)
-          sender: customSender // เติม sender เข้าไป
-        };
+      await showLoadingSafely(event, 20);
+
+      // เรียกใช้ Gemini
+      const aiText = await generateGeminiReply(userText, userId);
+
+      // 🌟 สั่งให้ตอบกลับใน "ร่างของน้องกรีน"
+      // รวบ replyToken และ messages ให้อยู่ในปีกกา {} ก้อนเดียวกัน
+      await lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: "text",
+            text: aiText,
+            sender: {
+              name: "น้องกรีน 👧🏻", // 👈 ปรับให้สั้นลงเพื่อป้องกัน Emoji กินโควต้าตัวอักษร
+              iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
+            }
+          }
+        ]
       });
-
-      // โยนข้อความที่ถูกอัปเกรดแล้ว ไปให้ฟังก์ชันตอบกลับ
-      await replyMessages(event.replyToken, messagesWithSender);
-      return;
-    }
-
-    // ==========================================
-    // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini (น้องกรีน) จัดการ!
-    // ==========================================
-
-    if (userId) {
-      await lineClient.showLoadingAnimation({
-        chatId: userId,
-        loadingSeconds: 20,
-      }).catch(console.error);
-    }
-
-    // เรียกใช้ Gemini
-    const aiText = await generateGeminiReply(userText, userId);
-
-    // 🌟 สั่งให้ตอบกลับใน "ร่างของน้องกรีน"
-    // รวบ replyToken และ messages ให้อยู่ในปีกกา {} ก้อนเดียวกัน
-    await lineClient.replyMessage({
-      replyToken: event.replyToken,
-      messages: [
+    } catch (error) {
+      // จุดเสี่ยงคือ findMatchedReply (Prisma) และ replyMessage
+      // ถ้าพังแล้วปล่อยเงียบ ผู้ใช้จะไม่ได้รับอะไรกลับเลย
+      console.error("[MessageHandler] Text branch ล้มเหลว:", error);
+      await replyMessages(event.replyToken, [
         {
           type: "text",
-          text: aiText,
-          sender: {
-            name: "น้องกรีน 👧🏻", // 👈 ปรับให้สั้นลงเพื่อป้องกัน Emoji กินโควต้าตัวอักษร
-            iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
-          }
+          text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองพิมพ์มาใหม่อีกครั้งน้า 😢"
         }
-      ]
-    });
+      ]);
+    }
   }
 
   if (event.message.type === "audio") {
     const messageId = event.message.id;
 
     // 🌟 1. โชว์ Loading รอไว้ก่อนเลย (เพราะสเตปดาวน์โหลด + ASR ใช้เวลา)
-    if (userId) {
-      await lineClient.showLoadingAnimation({
-        chatId: userId,
-        loadingSeconds: 10,
-      }).catch(console.error);
-    }
+    await showLoadingSafely(event, 10);
 
     try {
       // 🌟 2. โหลดไฟล์เสียงจาก LINE (รองรับทั้ง Blob และ Stream)

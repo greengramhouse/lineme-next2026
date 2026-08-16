@@ -1,0 +1,253 @@
+# Spec — แผนดำเนินการแก้ LINE Webhook (lineme)
+
+> อ้างอิงจาก `docs/plan.md` (รีวิว 2026-07-29) · ตรวจสอบความถูกต้องกับโค้ดจริงแล้วเมื่อ 2026-08-16 — ทุกข้อยังเป็นจริง ไม่มี drift
+>
+> **วิธีใช้ไฟล์นี้:** ทำข้อไหนเสร็จให้เปลี่ยน `[ ]` เป็น `[x]` แล้ว commit ไฟล์นี้ไปพร้อมกับโค้ด
+> จะได้รู้ตลอดว่าค้างตรงไหน
+
+---
+
+## สภาพแวดล้อมที่ยืนยันแล้ว (ไม่ต้องตรวจซ้ำ)
+
+- Next.js 16.2.6 — `after()` stable ตั้งแต่ v15.1.0, รองรับ Node.js server (ตรงกับ dev ผ่าน ngrok)
+- `export const runtime = 'nodejs'` และ `export const maxDuration` ใช้ได้ ไม่มี deprecation
+- env ครบแล้วใน `.env`: `CHANNEL_SECRET`, `CHANNEL_ACCESS_TOKEN`, `DATABASE_URL`, `DIRECT_URL`, `GEMINI_API_KEY`, `NEXT_PUBLIC_LIFF_ID`
+- ไม่มี `middleware.ts` / `proxy.ts` ในโปรเจกต์ → ยังไม่มีระบบ auth ใด ๆ
+- ยังไม่ได้ deploy — dev ผ่าน ngrok เท่านั้น
+
+---
+
+## Phase 0 — เตรียมพื้นที่ทำงาน
+
+- [x] **0.1** commit งานที่ค้างอยู่ก่อน — `pnpm-workspace.yaml` มีการเพิ่ม `allowBuilds` ที่ยังไม่ commit
+      → commit `5a70e55` บน `main`
+- [x] **0.2** สร้าง branch ใหม่สำหรับงานชุดนี้ → `fix/webhook-hardening`
+- [ ] **0.3** ~~ยิงข้อความทดสอบ baseline ก่อนแก้~~ — **ข้ามไป** (ทำ regression test ด้วย signed request จริงหลังแก้แทน ดูข้อ 1.15-1.20)
+
+---
+
+## Phase 1 — Critical (แตะแค่ 3 ไฟล์ ไม่ต้อง migrate DB)
+
+> ทั้ง Phase นี้ไม่ต้องตัดสินใจอะไรเพิ่ม ทำได้ทันที
+
+### C1 — `showLoadingAnimation` ไม่มี `.catch()` → 500 เมื่อบอทอยู่ในกลุ่ม
+
+ไฟล์: `handlers/messageHandler.ts:29-33`
+
+- [x] **1.1** เติม `.catch(console.error)` ที่ `showLoadingAnimation` ตัวแรก
+- [x] **1.2** เพิ่ม guard `event.source?.type === "user"` ให้ครบทั้ง 3 จุด
+- [x] **1.3** ดึงออกมาเป็น helper เดียว → `showLoadingSafely(event, loadingSeconds)`
+      ที่ `handlers/messageHandler.ts:12-31` ทั้ง 3 จุดเรียกใช้ helper นี้แล้ว ไม่มีการเรียก
+      `showLoadingAnimation` ตรง ๆ เหลืออยู่
+
+### C5 — `channelSecret` fallback เป็น `""` → เปิดช่องปลอม signature
+
+ไฟล์: `config/line-config.ts:4,7,11`
+
+- [x] **1.4** เอา `|| ""` ออกจาก `CHANNEL_SECRET` → ใช้ helper `requireEnv()` ที่ throw ตอน import
+- [x] **1.5** ทำแบบเดียวกันกับ `CHANNEL_ACCESS_TOKEN` (รวมเป็นตัวแปรเดียวใช้ทั้ง 2 client)
+- [x] **1.6** ยืนยันว่า `pnpm dev` และ `next build` ยังขึ้นปกติ — build ผ่าน 14/14 หน้า
+
+> ⚠️ **ผลข้างเคียงที่ต้องรู้ก่อน deploy:** การ throw ตอน import แปลว่า `next build` จะพังด้วย
+> ถ้า env ไม่ครบ **ตอน build** ไม่ใช่แค่ตอน runtime (Next รัน route module ตอน "Collecting page data")
+> → ต้องตั้ง env บน platform ให้ครบ **ก่อน** สั่ง build ไปผูกไว้ที่ข้อ 5.4 แล้ว
+
+> **หมายเหตุ:** เลือกทางเดียวพอ — throw ตอน import (แนะนำ) **หรือ** เช็ค `!channelSecret` ใน route
+> ถ้าทำ 1.4 แล้ว ใน Phase 1.7 ไม่ต้องเช็คซ้ำ
+
+### C2 + C4 + H1 — ยกเครื่อง `route.ts`
+
+ไฟล์: `app/api/line-webhook/route.ts` (ทั้งไฟล์ 26 บรรทัด) — **ได้ผลมากที่สุดต่อแรงที่ลง**
+
+- [x] **1.7** เพิ่ม `export const runtime = "nodejs"` และ `export const maxDuration = 60` (แก้ M4 ไปด้วย)
+- [x] **1.8** ครอบ `JSON.parse` ด้วย try/catch → ตอบ **400** (C2)
+- [x] **1.9** ย้ายการประมวลผล event เข้า `after()` จาก `next/server` แล้วตอบ 200 ทันที (C4)
+- [x] **1.10** เปลี่ยนเป็น `Promise.allSettled` + log ตัวที่ `rejected` พร้อม `webhookEventId` (H1)
+- [x] **1.11** รองรับ `body.events` ที่เป็น `undefined` / array ว่าง
+- [x] **1.12** ลบคอมเมนต์เก่าเรื่อง sequential for-loop ออก
+- [x] **1.12b** เพิ่มการเช็ค `!signature` แยกก่อน `validateSignature` (เดิมใช้ `|| ""`)
+
+โครงที่ควรได้ (จาก `plan.md`):
+
+```ts
+import { after, NextRequest, NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+export async function POST(req: NextRequest) {
+  const bodyText = await req.text();
+  const signature = req.headers.get("x-line-signature");
+
+  if (!signature || !validateSignature(bodyText, channelSecret, signature)) {
+    return new NextResponse("Unauthorized", { status: 401 });
+  }
+
+  let body: webhook.CallbackRequest;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    return new NextResponse("Bad Request", { status: 400 });
+  }
+
+  const events = body.events ?? [];
+
+  after(async () => {
+    const results = await Promise.allSettled(events.map(handleLineEvent));
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(`[Webhook] event ${events[i]?.webhookEventId} ล้มเหลว:`, r.reason);
+      }
+    });
+  });
+
+  return new NextResponse(null, { status: 200 });
+}
+```
+
+### C3 — Text branch ไม่มี try/catch
+
+ไฟล์: `handlers/messageHandler.ts:20-83`
+
+- [x] **1.13** ครอบ text branch ทั้งก้อนด้วย try/catch
+- [x] **1.14** ใน `catch` ตอบข้อความขอโทษกลับผู้ใช้ผ่าน `replyMessages()`
+      (ใช้ `replyMessages` ไม่ใช่ `lineClient.replyMessage` ตรง ๆ เพราะตัวมันมี error handling ในตัว
+      จะได้ไม่ throw ซ้ำออกมาจาก catch block)
+
+### ✅ ตรวจรับ Phase 1
+
+ทดสอบด้วย signed request จริง (คำนวณ HMAC จาก `CHANNEL_SECRET` ใน `.env`) ยิงเข้า dev server — **ผ่าน 7/7**
+
+- [x] **1.15** signature ผิด → **401** ✓ / ไม่ส่ง header `x-line-signature` เลย → **401** ✓
+- [x] **1.16** signature ถูกแต่ body ไม่ใช่ JSON → **400** ✓ (เดิมเป็น 500)
+- [x] **1.17** `events: []` (ปุ่ม Verify) → **200** ✓ / body ที่ไม่มีฟิลด์ `events` เลย → **200** ✓
+- [x] **1.18** ยิง message event จริง → **200 ใน 8 ms** ✓
+      log ยืนยันว่า Gemini + replyMessage ถูกเรียก**หลัง** response ออกไปแล้ว (stack ชี้ไปที่ `route.ts:39` = ใน `after()`)
+- [x] **1.19** ยิง event ที่ `source.type = "group"` → **200 ไม่ใช่ 500** ✓
+      และ log ยืนยันว่า `showLoadingAnimation` ถูกเรียกแค่ 2 ครั้ง = เฉพาะ event ที่เป็น `type: "user"`
+      ส่วน event ในกลุ่มถูกข้ามตามที่ต้องการ (เดิมจุดนี้คือสาเหตุของ 500)
+- [x] **1.20** batch 3 events (group + user + unfollow) ใน request เดียว → **200** ✓ ไม่ล้มทั้ง batch
+- [ ] **1.21** ส่งข้อความเสียงจริงผ่าน LINE → ยังทำงานปกติหลังย้ายไป `after()`
+      *(ยังทำไม่ได้ — ต้องใช้ไฟล์เสียงจริงจาก LINE ต้องทดสอบจากมือถือ)*
+- [x] **1.22** commit Phase 1
+
+> **ยังต้องยืนยันด้วยมือ (ต้องใช้ LINE จริง):** ข้อ 1.21, กด Verify ในหน้า LINE Developers Console จริง,
+> และลองเชิญบอทเข้ากลุ่มจริงแล้วพิมพ์ keyword ที่ตั้ง `showLoading: true`
+> — ที่ทำไปคือจำลอง payload ให้ตรงสเปกและตรวจพฤติกรรมฝั่งเซิร์ฟเวอร์แล้ว
+
+---
+
+## Phase 2 — High (แก้ได้เลย ไม่ต้องตัดสินใจ)
+
+### H2 — ไม่มี `unfollow` handler → `isFollowing` ผิดถาวร
+
+- [ ] **2.1** สร้าง `handlers/unfollowHandler.ts` — set `isFollowing: false` ตาม `lineId`
+      (ห้ามใช้ `upsertUserProfile` เพราะมัน hardcode `?? true` — ต้องเขียนฟังก์ชันใหม่หรือแก้ default)
+- [ ] **2.2** เพิ่ม `case "unfollow"` ใน `handlers/index.ts`
+- [ ] **2.3** แก้ `services/userService.ts:22,29` ให้ `isFollowing` ไม่ถูกบังคับเป็น `true` เสมอ
+- [ ] **2.4** ตรวจว่า `follow` ซ้ำ (บล็อกแล้วปลดบล็อก) กลับมาเป็น `true` ถูกต้อง
+
+### H4 — `updateProfileInBackground` ยิง LINE API + เขียน DB ทุกข้อความ
+
+ไฟล์: `handlers/messageHandler.ts:16-18` → `services/userService.ts:40-55`
+
+- [ ] **2.5** แก้ `catch` ว่างที่ `userService.ts:53-55` → ต้อง `console.error` (ตอนนี้พังแล้วเงียบสนิท)
+- [ ] **2.6** เพิ่ม throttle — refresh เฉพาะเมื่อ `user.updatedAt` เก่ากว่า ~24 ชม.
+      (อ่าน DB ก่อนแล้วค่อยตัดสินใจว่าจะยิง `getProfile` ไหม)
+- [ ] **2.7** ย้ายออกจาก floating promise ไปอยู่ใน `after()` (หรือให้ `handleLineEvent` ทั้งก้อนอยู่ใน `after()` แล้ว `await` ปกติ)
+      — floating promise เสี่ยงถูกฆ่ากลางทางตอน deploy บน serverless
+
+### H5 — Reply token อาจหมดอายุใน audio path
+
+> **สำคัญ:** ข้อนี้ **ไม่ได้หายไปเอง** หลังแก้ C4 — `after()` ทำให้ตอบ 200 เร็วขึ้น แต่ไม่ได้ยืดอายุ reply token
+
+- [ ] **2.8** ใน `services/replyService.ts:23` เมื่อ `replyMessage` ล้มเหลว อย่าคืน `null` เงียบ ๆ — log ให้ชัด
+- [ ] **2.9** เพิ่ม fallback เป็น `pushMessage` เมื่อ reply ล้มเหลว (แลกกับโควตา push)
+- [ ] **2.10** ตัดสินใจว่าจะเปิด fallback นี้เฉพาะ audio path หรือทุก path
+
+### ✅ ตรวจรับ Phase 2
+
+- [ ] **2.11** บล็อกบอท → ตรวจ DB ว่า `isFollowing` เป็น `false` แล้ว
+- [ ] **2.12** ปลดบล็อก → กลับเป็น `true`
+- [ ] **2.13** พิมพ์ข้อความ 5 ครั้งติด → ตรวจ log ว่า `getProfile` ถูกเรียกแค่ครั้งเดียว (ไม่ใช่ 5 ครั้ง)
+- [ ] **2.14** commit Phase 2
+
+---
+
+## Phase 3 — ต้องตัดสินใจก่อนลงมือ ⚠️
+
+> **3 ข้อนี้ blocked** — ต้องได้คำตอบจากเจ้าของโปรเจกต์ก่อน ไม่ควรเดาแล้วทำไปเลย
+
+### H3 — Idempotency / redelivery — *ข้อเดียวที่ต้อง migrate DB*
+
+- [ ] **3.1** **[ตัดสินใจ]** เลือกวิธีเก็บ dedup key: ตาราง `ProcessedEvent` ใหม่ใน Prisma หรือใช้ in-memory/Redis
+- [ ] **3.2** เพิ่ม model + unique index บน `webhookEventId` ใน `prisma/schema.prisma`
+- [ ] **3.3** รัน `prisma migrate` (ใช้ `DATABASE_URL` / `DIRECT_URL` ที่มีอยู่แล้ว)
+- [ ] **3.4** อ่าน `event.deliveryContext.isRedelivery` และ header `X-Line-Retry-Key` ใน route
+- [ ] **3.5** ข้าม event ที่เคยประมวลผลแล้ว → กัน Gemini ถูกเรียกซ้ำ + `ChatHistory` ซ้ำ
+- [ ] **3.6** เพิ่มการล้างแถวเก่า (event เกิน N วัน) กันตารางบวม
+
+### H6 — Admin API routes ไม่มี auth เลย
+
+ไฟล์: `app/api/keywords/route.ts`, `app/api/keywords/[id]/route.ts`,
+`app/api/richmenu/route.ts`, `app/api/richmenu/[id]/route.ts`, `app/api/richmenu/link/route.ts`
+
+- [ ] **3.7** **[ตัดสินใจ]** เลือกรูปแบบ auth — ตอนนี้โปรเจกต์**ไม่มีระบบ auth ใด ๆ เลย**
+      ตัวเลือก: (ก) shared secret header ง่าย ๆ (ข) login จริง เช่น NextAuth (ค) จำกัดด้วย LIFF ID token
+- [ ] **3.8** ใส่การตรวจสิทธิ์ในทั้ง 5 route
+- [ ] **3.9** ตรวจว่าหน้า dashboard ฝั่ง client ยังเรียก API ได้หลังใส่ auth
+- [ ] **3.10** ยิง route โดยไม่มี credential → ต้องได้ 401
+
+### H7 — Server action เชื่อ `lineId` ที่ client ส่งมา
+
+ไฟล์: `app/actions/userAction.ts`
+
+- [ ] **3.11** เปลี่ยนฝั่ง LIFF ให้ส่ง ID token (`liff.getIDToken()`) แทนการส่ง `lineId` ตรง ๆ
+- [ ] **3.12** ฝั่ง server verify กับ `https://api.line.me/oauth2/v2.1/verify` แล้วดึง `sub` มาใช้เป็น `lineId`
+- [ ] **3.13** เอาพารามิเตอร์ `lineId` ออกจาก signature ของ `saveUserNameAction` ทั้งหมด
+- [ ] **3.14** ทดสอบว่ายิง action ด้วย token ของคนอื่นแล้วเขียนทับข้อมูลไม่ได้แล้ว
+
+---
+
+## Phase 4 — Medium (ทำตามสะดวก)
+
+- [ ] **4.1** **M1** — เพิ่ม fallback message สำหรับ image / video / file / location / sticker
+      (ตอนนี้รองรับแค่ `text` / `audio` นอกนั้นเงียบสนิท)
+- [ ] **4.2** **M2** — เปิด `postback` handler (ตอนนี้ comment ไว้ที่ `handlers/index.ts:12-13`)
+      ถ้ามีแผนใช้ rich menu แบบ postback ต้องทำข้อนี้
+- [ ] **4.3** **M2** — พิจารณาเพิ่ม `join` / `leave` / `memberJoined` / `unsend` / `videoPlayComplete`
+- [ ] **4.4** **M3** — cache `AutoReply` แบบ CONTAINS พร้อม TTL (ตอนนี้ `replyRuleService.ts:28-33` ดึงทั้งตารางทุกข้อความ)
+- [ ] **4.5** **M5** — สร้าง `.env.example` และพิจารณาเปลี่ยนชื่อ env เป็น `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN`
+      (ถ้าเปลี่ยนชื่อ ต้องแก้ `.env` จริงและตัวตั้งค่าตอน deploy ด้วย)
+- [ ] **4.6** **M6** — เอา `(msg: any)` ออก (`messageHandler.ts:42,141`) ใช้ `messagingApi.Message` ที่ SDK ให้มา
+- [ ] **4.7** **M7** — ดึง object `sender` (น้องกรีน / น้องโปรแกรม) ที่ hardcode ซ้ำ 4 ที่
+      (`messageHandler.ts:36-39, 76-79, 135-138, 166-169`) ออกเป็น constant ที่เดียว
+- [ ] **4.8** **M8** — เปลี่ยน `if (event.message.type === "audio")` (`:85`) เป็น `else if`
+- [ ] **4.9** **M9** — ใส่ `webhookEventId` ลงใน log ทุกจุด เพื่อให้สืบย้อนได้ว่า event ไหนพัง
+- [ ] **4.10** **M10** — `typhoon.ts:46` เปลี่ยน `data.text.trim()` เป็น `data.text?.trim()`
+- [ ] **4.11** **M11** — ลบ dead code `if (!TYPHOON_API_KEY)` ที่ `typhoon.ts:9-11` (เงื่อนไขเป็นจริงไม่ได้เพราะ key เป็น literal)
+
+---
+
+## Phase 5 — ก่อน push ขึ้น public repo / deploy จริง
+
+- [ ] **5.1** ย้าย Typhoon API key ออกจาก `services/typhoon.ts:8` ไปเป็น env
+      *(เจ้าของเลือก "ปล่อยไว้ก่อน" ในรอบรีวิว — บันทึกไว้กันลืม)*
+- [ ] **5.2** revoke key เดิม — key **ติดอยู่ใน git history แล้ว** (commit `074df3c`) การลบจากไฟล์อย่างเดียวไม่พอ
+- [ ] **5.3** ตรวจซ้ำว่า `.env` ยังไม่ถูก track ใน git (รอบก่อนตรวจแล้วว่าไม่ถูก track และ `.gitignore` ครอบ `.env*` อยู่)
+- [ ] **5.4** ตั้ง env ทั้งหมดบน platform ที่จะ deploy ก่อนขึ้นจริง (C5 จะ fail fast ถ้าลืม — ตั้งใจให้เป็นแบบนั้น)
+- [ ] **5.5** ตรวจว่า `maxDuration = 60` ไม่เกินลิมิตของ plan ที่ใช้จริง
+
+---
+
+## Checklist การทดสอบรวม (รันซ้ำได้ทุกครั้งที่แก้)
+
+- [ ] ยิง webhook ปลอมด้วย signature ผิด → 401
+- [ ] ยิงด้วย body ที่ไม่ใช่ JSON → 400 (ไม่ใช่ 500)
+- [ ] กด "Verify" ใน LINE Developers Console (`events: []`) → 200
+- [ ] response time จาก LINE Console → หลัก ms
+- [ ] บอทในกลุ่ม + keyword ที่ตั้ง `showLoading: true` → ไม่ 500
+- [ ] ส่ง 3 ข้อความรัว ๆ → ไม่ล้มทั้ง batch
+- [ ] ส่งรูป / สติกเกอร์ → มี fallback ตอบ ไม่เงียบ
+- [ ] ส่งข้อความเสียงยาว ๆ → ได้คำตอบกลับ ไม่ค้างที่ loading
+- [ ] บล็อกบอท → `isFollowing = false`
