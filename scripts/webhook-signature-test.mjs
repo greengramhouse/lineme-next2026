@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 
-const env = fs.readFileSync("D:/project_gukkghu/13-Next-LineSDK/lineme/.env", "utf8");
+const env = fs.readFileSync("./.env", "utf8");
 const secret = env.match(/^CHANNEL_SECRET\s*=\s*"?([^"\r\n]+)"?/m)?.[1];
 if (!secret) throw new Error("CHANNEL_SECRET not found in .env");
 
-const URL = "http://localhost:3999/api/line-webhook";
+// ระบุพอร์ตได้: node scripts/webhook-signature-test.mjs 3999
+const PORT = process.argv[2] ?? 3000;
+const URL = `http://localhost:${PORT}/api/line-webhook`;
 
 const sign = (body) =>
   crypto.createHmac("sha256", secret).update(body).digest("base64");
@@ -30,7 +32,7 @@ async function hit(name, body, signature, expected) {
 // รอ dev server ตื่น
 for (let i = 0; i < 60; i++) {
   try {
-    await fetch("http://localhost:3999/");
+    await fetch(`http://localhost:${PORT}/`);
     break;
   } catch {
     await new Promise((r) => setTimeout(r, 1000));

@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import liff from "@line/liff";
 import FriendshipModal from "../../components/FriendshipModal";
 import { useLiffStore } from "../../store/liffStore";
 import { saveUserNameAction } from "@/app/actions/userAction";
@@ -29,16 +30,22 @@ function FormContent() {
       return;
     }
 
+    // ดึง ID token ตอนกดส่ง ไม่เก็บค้างไว้ใน state — จะได้ใบที่ยังไม่หมดอายุ
+    // เซิร์ฟเวอร์จะเอา token นี้ไปถาม LINE เองว่าเป็นใคร
+    // เราไม่ส่ง userId ขึ้นไปแล้ว เพราะ client ส่งอะไรมาก็เชื่อไม่ได้
+    const idToken = liff.getIDToken();
+    if (!idToken) {
+      setMessage({
+        text: "ไม่พบข้อมูลยืนยันตัวตน กรุณาปิดแล้วเปิดหน้านี้ใหม่ผ่านแอป LINE",
+        type: "error",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await saveUserNameAction(
-        profile.userId, 
-        userName.trim(), 
-        profile.email,
-        profile.displayName,
-        profile.pictureUrl
-      );
-      
+      const result = await saveUserNameAction(idToken, userName.trim());
+
       if (result.success) {
         setMessage({ text: "บันทึกข้อมูลสำเร็จ!", type: "success" });
         setUserName(""); // เคลียร์ฟอร์ม

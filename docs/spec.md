@@ -13,7 +13,8 @@
 | 1 — Critical C1-C5 + H1 + M4 | ✅ เสร็จ ทดสอบผ่าน 7/7 | `9fb4bfe` |
 | 2 — High H2 / H4 / H5 | ✅ เสร็จ ทดสอบผ่าน 5/5 | `35e8363` |
 | 3 — H3 idempotency | ✅ เสร็จ ทดสอบผ่าน 4/4 | `5117154` |
-| 3 — H6 / H7 (auth) | ⏸ **เลื่อนตามที่ตัดสินใจ** — ต้องทำก่อน deploy | — |
+| 3 — H6 admin auth (Better Auth + LINE Login) | ✅ เสร็จ ทดสอบผ่าน 15/15 | `ef5f0cd` |
+| 3 — H7 LIFF ID token | ✅ เสร็จ ทดสอบผ่าน 6/6 | (commit ถัดไป) |
 | 4 — Medium M1/M3/M5a/M6-M11 | ✅ เสร็จ ทดสอบผ่าน 12/12 | `a73ca0c` |
 | 4 — M2 postback, M5b เปลี่ยนชื่อ env | ⏸ ข้ามตามที่ตัดสินใจ | — |
 | 5 — ย้าย Typhoon key ไป env | ✅ เสร็จ ทดสอบผ่าน 4/4 | `c72752c` |
@@ -21,10 +22,15 @@
 
 โค้ดทั้งหมด push ขึ้น `origin/main` แล้ว (`c72752c`)
 
-**ค้างอยู่ 3 กลุ่ม (เรียงตามความเร่งด่วน):**
-1. 🔴 **ยืนยันว่า revoke Typhoon key เดิมแล้ว** + ตั้ง env บน Vercel (ข้อ 5.2b, 5.2d, 5.4)
-2. H6 / H7 — auth ของ admin API และ LIFF ID token — **deploy อยู่จริงแล้ว เส้นพวกนี้เปิดโล่งอยู่ตอนนี้**
-3. M2 postback — ถ้าจะใช้ rich menu แบบ postback
+**ค้างอยู่ (เรียงตามความเร่งด่วน):**
+1. 🔴 **ยืนยันว่า revoke Typhoon key เดิมแล้ว** (ข้อ 5.2b)
+2. 🔴 **ตั้ง env ใหม่ 5 ตัวบน Vercel ก่อน deploy** ไม่งั้น build พัง (ข้อ 5.4)
+   `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `ADMIN_LINE_IDS`,
+   `LINE_LOGIN_CHANNEL_ID`, `LINE_LOGIN_CHANNEL_SECRET`, `TYPHOON_API_KEY`
+3. 🔴 **ลง Callback URL ของ production ใน LINE Developers Console**
+   `https://lineme-next2026.vercel.app/api/auth/callback/line`
+4. ทดสอบล็อกอินจริงจากเบราว์เซอร์ (ยังทดสอบได้แค่ระดับ HTTP)
+5. M2 postback — ถ้าจะใช้ rich menu แบบ postback
 
 ---
 
@@ -245,30 +251,59 @@ export async function POST(req: NextRequest) {
 
 ---
 
-### 🔒 H6 / H7 — เลื่อนไปก่อนตามที่ตัดสินใจ
+### 🔒 H6 — ปิด dashboard ด้วย LINE Login (Better Auth) ✅
 
-> **เหตุผล:** ยังไม่ deploy จริง เข้าถึงได้แค่ผ่าน ngrok ที่เปิดเองเท่านั้น
-> **แต่ต้องทำก่อน deploy แน่นอน** — ทั้งคู่คือช่องให้คนนอกเขียนข้อมูลได้
+**ตัดสินใจ:** ใช้ Better Auth 1.6.29 + LINE Login (ไม่ใช่ shared secret)
+เหตุผลที่ shared secret ใช้ไม่ได้: component ที่เรียก API (`TableKeyword.tsx`, `formKeyword.tsx`,
+`FormRichmenu.tsx`) เป็น `"use client"` ยิง fetch จากเบราว์เซอร์ — secret จะต้องถูกฝังใน JS
+ที่ส่งให้เบราว์เซอร์ = ใครเปิด DevTools ก็เห็น ป้องกันอะไรไม่ได้
 
-#### H6 — Admin API routes ไม่มี auth เลย
+- [x] **3.7** ลง `better-auth@1.6.29` + `@better-auth/prisma-adapter` (peer deps รองรับ Next 16 / Prisma 7 / React 19)
+- [x] **3.8** `lib/auth.ts` — LINE provider (built-in) + allowlist `ADMIN_LINE_IDS`
+- [x] **3.9** 4 model ใหม่ + migration `20260816113005_add_better_auth_admin`
+- [x] **3.10** `app/api/auth/[...all]/route.ts` — callback ของ LINE Login
+- [x] **3.11** `proxy.ts` — ด่านหน้า ดูคุกกี้แบบเร็ว ไม่แตะ DB
+- [x] **3.12** `lib/adminAuth.ts` — ด่านจริง เช็ค session + allowlist ทุก request
+- [x] **3.13** ใส่ `requireAdminApi()` ครบทั้ง 6 handler ใน 5 route + ปิด `dashboard/layout.tsx`
+- [x] **3.14** หน้า `/login` พร้อมปุ่ม LINE + กัน open redirect ใน `?redirect=`
 
-ไฟล์: `app/api/keywords/route.ts`, `app/api/keywords/[id]/route.ts`,
-`app/api/richmenu/route.ts`, `app/api/richmenu/[id]/route.ts`, `app/api/richmenu/link/route.ts`
+> **2 จุดที่ถ้าพลาดจะพังเงียบ ๆ — บันทึกไว้กันลืมตอนอัปเกรด:**
+> 1. `modelName` ต้องเป็น **camelCase** (`adminUser` ไม่ใช่ `AdminUser`) เพราะ prisma adapter
+>    เรียก `db[modelName]` ตรง ๆ ไม่แปลงตัวอักษร ส่วน Prisma client ใช้ accessor camelCase
+> 2. ต้องตั้งชื่อ model ขึ้นต้นด้วย `Admin` เพราะ default ของ Better Auth คือ `user`
+>    ซึ่งชนกับ `model User` เดิม (ผู้ติดตามบอทใน LINE) คนละความหมายกันสิ้นเชิง
+>
+> field ทั้งหมดคัดตาม `@better-auth/core/dist/db/get-tables.mjs` ของ 1.6.29
+> **ถ้าอัปเกรด Better Auth ต้องเทียบไฟล์นั้นใหม่**
+> (ไม่ได้ใช้ `@better-auth/cli generate` เพราะ CLI ค้างที่ 1.4.21 ตามหลัง library อยู่)
 
-- [ ] **3.7** เลือกรูปแบบ auth — โปรเจกต์นี้**ไม่มีระบบ auth ใด ๆ เลย** (ไม่มี middleware, ไม่มี session)
-      ตัวเลือกที่คุยกันไว้: (ก) shared secret header (ข) NextAuth login จริง (ค) allowlist LINE userId ผ่าน LIFF ID token
-- [ ] **3.8** ใส่การตรวจสิทธิ์ในทั้ง 5 route
-- [ ] **3.9** ตรวจว่าหน้า dashboard ฝั่ง client ยังเรียก API ได้หลังใส่ auth
-- [ ] **3.10** ยิง route โดยไม่มี credential → ต้องได้ 401
+#### ✅ ตรวจรับ H6 — ผ่าน 15/15 (`scripts/auth-guard-test.mjs`)
 
-#### H7 — Server action เชื่อ `lineId` ที่ client ส่งมา
+- [x] 🔴 `POST /api/line-webhook` (signature ถูก) → **200 ไม่ใช่ 401** — webhook ไม่ถูก auth บล็อก
+- [x] `POST /api/line-webhook` (signature ผิด) → 401 จาก `validateSignature` ตามเดิม
+- [x] admin API ทั้ง 6 handler → 401 ทุกเส้น
+- [x] `/dashboard` และ `/dashboard/keyword` → 307 ไป `/login?redirect=%2Fdashboard`
+- [x] `/login`, `/form/userform`, `/`, `/api/auth/*` → 200 เข้าได้ตามเดิม
 
-ไฟล์: `app/actions/userAction.ts` — ใครก็ยิง action นี้พร้อม `lineId` ของคนอื่นเพื่อเขียนทับข้อมูลได้
+---
 
-- [ ] **3.11** เปลี่ยนฝั่ง LIFF ให้ส่ง ID token (`liff.getIDToken()`) แทนการส่ง `lineId` ตรง ๆ
-- [ ] **3.12** ฝั่ง server verify กับ `https://api.line.me/oauth2/v2.1/verify` แล้วดึง `sub` มาใช้เป็น `lineId`
-- [ ] **3.13** เอาพารามิเตอร์ `lineId` ออกจาก signature ของ `saveUserNameAction` ทั้งหมด
-- [ ] **3.14** ทดสอบว่ายิง action ด้วย token ของคนอื่นแล้วเขียนทับข้อมูลไม่ได้แล้ว
+### 🔒 H7 — Server action เชื่อ `lineId` ที่ client ส่งมา ✅
+
+- [x] **3.15** `lib/lineIdToken.ts` — verify กับ `https://api.line.me/oauth2/v2.1/verify`
+      ส่ง `client_id` ไปเทียบด้วย **สำคัญมาก** ไม่งั้นใครก็เอา token จาก LIFF app อื่นมายิงใส่เราได้
+- [x] **3.16** `saveUserNameAction(idToken, userName)` — **เอา `lineId` ออกจาก signature แล้ว**
+      พร้อม `displayName` / `pictureUrl` / `email` ที่เดิมก็รับจาก client เหมือนกัน
+      ตอนนี้เอาจาก token ที่ LINE รับรองทั้งหมด
+- [x] **3.17** ฝั่ง LIFF เรียก `liff.getIDToken()` ตอนกดส่ง (ไม่เก็บค้างใน state จะได้ใบที่ยังไม่หมดอายุ)
+
+#### ✅ ตรวจรับ H7 — ผ่าน 6/6 (`scripts/h7-idtoken-test.ts`)
+
+- [x] `idToken` ว่าง → ปฏิเสธ
+- [x] `idToken` ปลอม → LINE ปฏิเสธ → action ปฏิเสธ
+- [x] ชื่อสั้นเกิน → ปฏิเสธก่อนถึง LINE
+- [x] `saveUserNameAction.length === 2` — **ไม่มีช่องให้ส่ง `lineId` เข้ามาแล้ว**
+- [x] `verifyLineIdToken('ปลอม')` → `null`
+- [x] ไม่มีแถวไหนใน DB ถูกเขียนจาก request ปลอมเลย
 
 > ถ้าเลือกทางเลือก (ค) ของ H6 จะใช้โค้ด verify ตัวเดียวกับ H7 ได้เลย ทำทีเดียวจบทั้งสองข้อ
 
