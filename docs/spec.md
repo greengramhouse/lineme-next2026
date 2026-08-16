@@ -16,9 +16,13 @@
 | 3 — H6 / H7 (auth) | ⏸ **เลื่อนตามที่ตัดสินใจ** — ต้องทำก่อน deploy | — |
 | 4 — Medium M1/M3/M5a/M6-M11 | ✅ เสร็จ ทดสอบผ่าน 12/12 | `a73ca0c` |
 | 4 — M2 postback, M5b เปลี่ยนชื่อ env | ⏸ ข้ามตามที่ตัดสินใจ | — |
-| 5 — ก่อน deploy | ⬜ ยังไม่ถึงเวลา | — |
+| 5 — ย้าย Typhoon key ไป env | ✅ เสร็จ ทดสอบผ่าน 4/4 | (ดู log ล่าสุด) |
+| 5 — **revoke key เดิม** | 🔴 **ยังไม่ได้ทำ ต้องทำเอง** | — |
 
-**ค้างอยู่ 3 กลุ่ม:** H6/H7 (auth ก่อน deploy) · M2 (postback ถ้าจะใช้) · Phase 5 (ย้าย Typhoon key + revoke)
+**ค้างอยู่ 3 กลุ่ม (เรียงตามความเร่งด่วน):**
+1. 🔴 **revoke Typhoon key เดิม** — repo เป็น public และ key อยู่ใน history แล้ว (ข้อ 5.2)
+2. H6 / H7 — auth ของ admin API และ LIFF ID token ต้องทำก่อน deploy รอบหน้า
+3. M2 postback — ถ้าจะใช้ rich menu แบบ postback
 
 ---
 
@@ -312,14 +316,44 @@ export async function POST(req: NextRequest) {
 
 ---
 
-## Phase 5 — ก่อน push ขึ้น public repo / deploy จริง
+## Phase 5 — ความปลอดภัยของ secret / เตรียม deploy
 
-- [ ] **5.1** ย้าย Typhoon API key ออกจาก `services/typhoon.ts:8` ไปเป็น env
-      *(เจ้าของเลือก "ปล่อยไว้ก่อน" ในรอบรีวิว — บันทึกไว้กันลืม)*
-- [ ] **5.2** revoke key เดิม — key **ติดอยู่ใน git history แล้ว** (commit `074df3c`) การลบจากไฟล์อย่างเดียวไม่พอ
-- [ ] **5.3** ตรวจซ้ำว่า `.env` ยังไม่ถูก track ใน git (รอบก่อนตรวจแล้วว่าไม่ถูก track และ `.gitignore` ครอบ `.env*` อยู่)
-- [ ] **5.4** ตั้ง env ทั้งหมดบน platform ที่จะ deploy ก่อนขึ้นจริง (C5 จะ fail fast ถ้าลืม — ตั้งใจให้เป็นแบบนั้น)
-- [ ] **5.5** ตรวจว่า `maxDuration = 60` ไม่เกินลิมิตของ plan ที่ใช้จริง
+> 🔴 **ตรวจพบเมื่อ 2026-08-16:** repo `github.com/greengramhouse/lineme-next2026` เป็น **public**
+> (`"visibility": "public"` จาก GitHub API แบบไม่ล็อกอิน) และไฟล์ `services/typhoon.ts` บน `main`
+> **มี key อยู่จริง** — ยืนยันด้วยการดึง raw file มาแล้วเจอบรรทัดที่ขึ้นต้นด้วย `sk-`
+>
+> แผนเดิมเขียนข้อนี้ไว้ในหัวข้อ "ก่อน push ขึ้น public repo" — แต่มันเกิดไปแล้วตั้งแต่ commit `074df3c`
+
+- [x] **5.1** ย้าย Typhoon API key ไปอ่านจาก `process.env.TYPHOON_API_KEY`
+      สแกนทั้งโปรเจกต์ยืนยันแล้วว่าไม่มี `sk-` หลงเหลือในซอร์สอีก
+- [ ] **5.2** 🔴 **revoke key เดิมที่ opentyphoon.ai แล้วออกใหม่** — ยังไม่ได้ทำ ต้องทำเอง
+      key ยังอยู่ใน git history (commit `074df3c`) การลบจากไฟล์อย่างเดียว**ไม่พอ**
+- [ ] **5.2b** เอา key ใหม่ใส่ `.env` (บรรทัด `TYPHOON_API_KEY=` เตรียมไว้ให้แล้ว) และตั้งบน Vercel ด้วย
+- [x] **5.3** ตรวจซ้ำว่า `.env` ยังไม่ถูก track ใน git ✓ (`.gitignore` ครอบ `.env*` และยกเว้นแค่ `.env.example`)
+- [ ] **5.4** ตั้ง env ทั้งหมดบน Vercel ก่อน deploy — **จำเป็น** เพราะ C5 fail fast
+      เดิมใช้ `|| ""` จึง build ผ่านเสมอแม้ลืมตั้ง env ตอนนี้ถ้าไม่มี `CHANNEL_SECRET` /
+      `CHANNEL_ACCESS_TOKEN` **build จะ fail** (deployment เดิมยังทำงานต่อ Vercel ไม่ลบให้)
+- [ ] **5.5** ตรวจว่า `maxDuration = 60` ไม่เกินลิมิตของ plan ที่ใช้ — ถ้าเกิน deploy จะ error ลดเป็น 30 ได้
+- [ ] **5.6** `build` script มีแค่ `prisma generate` ไม่มี `migrate deploy`
+      migration `add_processed_event` รันไปที่ Supabase ตัวเดียวกันแล้ว จึงพร้อมใช้งาน
+      แต่ครั้งหน้าที่มี migration ใหม่ต้องรันเอง หรือเพิ่ม `prisma migrate deploy` เข้า build script
+
+### 🧩 แก้สัญญาของ ASR ไปด้วย (จำเป็น ไม่ใช่ของแถม)
+
+เดิม `processTyphoonASR()` คืน `string` เสมอ แล้วฝั่งเรียกใช้เดาว่าล้มเหลวไหมด้วยการหา substring
+`"ไม่สามารถถอดข้อความ"` / `"ข้อผิดพลาด"` ในข้อความ — ข้อความใหม่ตอน key หายไม่มีคำพวกนี้
+ถ้าปล่อยไว้ระบบจะเข้าใจว่า **ถอดเสียงสำเร็จ** แล้วส่งประโยค "ระบบถอดเสียงยังไม่พร้อม" เข้า Gemini
+
+- [x] **5.7** เปลี่ยนเป็น discriminated union `{ ok: true, text } | { ok: false, message }`
+      ฝั่ง `messageHandler` เช็ค `if (!asr.ok)` แทนการหา substring
+
+#### ✅ ตรวจรับ Phase 5 — ผ่าน 4/4 (`scripts/phase5-typhoon-env-test.ts`)
+
+- [x] ไม่มี `TYPHOON_API_KEY` → `ok: false` + ข้อความบอกผู้ใช้ว่าระบบถอดเสียงไม่พร้อม
+      (ไม่ throw ทั้งแอป — ข้อความ text ยังตอบได้ปกติ ต่างจาก `CHANNEL_*` ที่เป็นเรื่องความปลอดภัยจึง fail fast)
+- [x] key ผิด → ยิง API จริงได้ `401 Invalid API Key` แล้วคืน `ok: false` ไม่ throw ออกมา
+- [x] ไม่มี fallback ไปใช้ค่า hardcode หลงเหลือ
+- [x] regression ทั้งชุดยังผ่าน: signature 12/12, phase2 3/3, phase3 4/4, phase4 3/3
 
 ---
 

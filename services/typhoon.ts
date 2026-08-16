@@ -1,19 +1,40 @@
-export async function processTyphoonASR(audioBuffer: Buffer): Promise<string> {
+const TYPHOON_AUDIO_URL = "https://api.opentyphoon.ai/v1/audio/transcriptions";
+
+// 🛠️ ตรวจสอบชื่อ Model ล่าสุดของ Typhoon ASR (ปกติจะใช้ชื่อ typhoon-audio หรืออิงตาม Docs)
+const TYPHOON_MODEL = "typhoon-asr-realtime";
+
+/**
+ * ผลลัพธ์ของ ASR
+ *
+ * เดิมฟังก์ชันคืน string เสมอ แล้วฝั่งเรียกใช้ต้องเดาว่าล้มเหลวไหมด้วยการหา
+ * substring "ไม่สามารถถอดข้อความ" / "ข้อผิดพลาด" ในข้อความ — เปราะมาก
+ * แค่แก้ข้อความให้สุภาพขึ้นก็ทำให้ระบบเข้าใจผิดว่าถอดเสียงสำเร็จได้ทันที
+ */
+export type ASRResult =
+  | { ok: true; text: string }
+  | { ok: false; message: string };
+
+export async function processTyphoonASR(
+  audioBuffer: Buffer
+): Promise<ASRResult> {
+  // ไม่ throw ตอน import แบบ line-config เพราะ ASR เป็นฟีเจอร์เสริม
+  // ถ้า key หายแล้วทำให้ทั้งแอปพัง = ตอบข้อความธรรมดาก็ไม่ได้ไปด้วย ซึ่งแย่กว่า
+  // (ต่างจาก CHANNEL_SECRET ที่ถ้าหายแล้วปล่อยผ่านจะกลายเป็นช่องโหว่ความปลอดภัย)
+  const TYPHOON_API_KEY = process.env.TYPHOON_API_KEY;
+  if (!TYPHOON_API_KEY) {
+    console.error("[Typhoon ASR] ไม่พบ env TYPHOON_API_KEY — ข้ามการถอดเสียง");
+    return {
+      ok: false,
+      message: "ขออภัยค่ะ ระบบถอดเสียงยังไม่พร้อมใช้งาน พิมพ์มาคุยแทนน้องกรีนก่อนน้า 🙏",
+    };
+  }
+
   try {
     console.log(
       "เริ่มถอดเสียงด้วย Typhoon ASR...",
       audioBuffer.length,
       "bytes",
     );
-    // ⚠️ TODO: key นี้ hardcode อยู่ในซอร์สและติดอยู่ใน git history แล้ว (commit 074df3c)
-    // ต้องย้ายไป env + revoke key เดิม ก่อน push ขึ้น public repo — ดู docs/spec.md ข้อ 5.1-5.2
-    const TYPHOON_API_KEY = "sk-EnfaxzlAMqYMQpNUK0reJC2t72ko2h6Y5J41oik130AjPqp6";
-
-    const TYPHOON_AUDIO_URL =
-      "https://api.opentyphoon.ai/v1/audio/transcriptions";
-
-    // 🛠️ ตรวจสอบชื่อ Model ล่าสุดของ Typhoon ASR (ปกติจะใช้ชื่อ typhoon-audio หรืออิงตาม Docs)
-    const TYPHOON_MODEL = "typhoon-asr-realtime";
 
     const formData = new FormData();
     // ไฟล์เสียงจาก LINE มักจะเป็น .m4a หรือ aac
@@ -48,12 +69,15 @@ export async function processTyphoonASR(audioBuffer: Buffer): Promise<string> {
     const text = data?.text?.trim();
     if (!text) {
       console.error("[Typhoon ASR] response ไม่มีฟิลด์ text:", JSON.stringify(data)?.slice(0, 500));
-      return "ไม่สามารถถอดข้อความจากเสียงได้ค่ะ";
+      return { ok: false, message: "ไม่สามารถถอดข้อความจากเสียงได้ค่ะ" };
     }
 
-    return text;
+    return { ok: true, text };
   } catch (error) {
     console.error("Typhoon ASR Request Error:", error);
-    return "ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบถอดเสียง (ASR)";
+    return {
+      ok: false,
+      message: "ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบถอดเสียง (ASR)",
+    };
   }
 }

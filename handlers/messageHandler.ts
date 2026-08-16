@@ -151,22 +151,19 @@ async function handleAudioMessage(
     const audioBuffer = await downloadAudio(messageId);
 
     // 🌟 3. ส่งเข้า Typhoon ASR เพื่อแปลงเสียงพูดเป็นข้อความ Text
-    const transcribedText = await processTyphoonASR(audioBuffer);
+    const asr = await processTyphoonASR(audioBuffer);
 
-    // เช็คว่า Typhoon พังหรือไม่ ถ้าพังให้แจ้งเตือนและหยุดทำงาน
-    if (
-      transcribedText.includes("ไม่สามารถถอดข้อความ") ||
-      transcribedText.includes("ข้อผิดพลาด")
-    ) {
-      console.error(`${tag(event)} ASR ไม่สำเร็จ: ${transcribedText}`);
+    // เช็คด้วย discriminated union ไม่ใช่การหา substring ในข้อความ
+    if (!asr.ok) {
+      console.error(`${tag(event)} ASR ไม่สำเร็จ: ${asr.message}`);
       await replyOrPush(replyToken, userId, [
-        { type: "text", text: transcribedText },
+        { type: "text", text: asr.message },
       ]);
       return;
     }
 
     // นำข้อความเสียงที่ถอดได้มาตัดช่องว่างเตรียมเอาไปค้นหา
-    const cleanUserVoiceText = transcribedText.trim();
+    const cleanUserVoiceText = asr.text.trim();
 
     // ==========================================================
     // 🌟 สเตปที่ 3.5: นำข้อความจากเสียงไปเช็ค Keyword ในฐานข้อมูลก่อน
