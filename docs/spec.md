@@ -141,36 +141,54 @@ export async function POST(req: NextRequest) {
 
 ### H2 — ไม่มี `unfollow` handler → `isFollowing` ผิดถาวร
 
-- [ ] **2.1** สร้าง `handlers/unfollowHandler.ts` — set `isFollowing: false` ตาม `lineId`
-      (ห้ามใช้ `upsertUserProfile` เพราะมัน hardcode `?? true` — ต้องเขียนฟังก์ชันใหม่หรือแก้ default)
-- [ ] **2.2** เพิ่ม `case "unfollow"` ใน `handlers/index.ts`
-- [ ] **2.3** แก้ `services/userService.ts:22,29` ให้ `isFollowing` ไม่ถูกบังคับเป็น `true` เสมอ
-- [ ] **2.4** ตรวจว่า `follow` ซ้ำ (บล็อกแล้วปลดบล็อก) กลับมาเป็น `true` ถูกต้อง
+- [x] **2.1** สร้าง `handlers/unfollowHandler.ts` — เรียก `setFollowingStatus(userId, false)`
+      ใช้ `updateMany` ไม่ใช่ `update` เพราะถ้าไม่เจอ record `update` จะ throw P2025
+      (เกิดได้จริงกับคนที่เคยคุยตั้งแต่ก่อนมีตาราง User แล้วมาบล็อกทีหลัง)
+- [x] **2.2** เพิ่ม `case "unfollow"` ใน `handlers/index.ts`
+- [x] **2.3** แก้ `upsertUserProfile` ให้เขียน `isFollowing` เฉพาะตอนที่ส่งค่ามาจริง
+      เดิมใช้ `?? true` ซึ่งแปลว่า event อะไรก็ตามที่วิ่งเข้ามาจะปลุกคนที่บล็อกไปแล้วกลับเป็น `true`
+- [x] **2.4** เพิ่ม self-heal — ถ้า DB บอก `isFollowing: false` แต่ผู้ใช้ส่งข้อความเข้ามาได้
+      แปลว่ายังไม่ได้บล็อกจริง ให้แก้กลับเป็น `true` (กันกรณี follow event ตอนปลดบล็อกหล่นหาย)
 
 ### H4 — `updateProfileInBackground` ยิง LINE API + เขียน DB ทุกข้อความ
 
 ไฟล์: `handlers/messageHandler.ts:16-18` → `services/userService.ts:40-55`
 
-- [ ] **2.5** แก้ `catch` ว่างที่ `userService.ts:53-55` → ต้อง `console.error` (ตอนนี้พังแล้วเงียบสนิท)
-- [ ] **2.6** เพิ่ม throttle — refresh เฉพาะเมื่อ `user.updatedAt` เก่ากว่า ~24 ชม.
-      (อ่าน DB ก่อนแล้วค่อยตัดสินใจว่าจะยิง `getProfile` ไหม)
-- [ ] **2.7** ย้ายออกจาก floating promise ไปอยู่ใน `after()` (หรือให้ `handleLineEvent` ทั้งก้อนอยู่ใน `after()` แล้ว `await` ปกติ)
-      — floating promise เสี่ยงถูกฆ่ากลางทางตอน deploy บน serverless
+- [x] **2.5** แก้ `catch` ว่าง → `console.error` พร้อม userId
+- [x] **2.6** เพิ่ม throttle 24 ชม. (`PROFILE_REFRESH_INTERVAL_MS`) — อ่าน `updatedAt` จาก DB ก่อน
+      ค่อยตัดสินใจว่าจะยิง `getProfile` ไหม
+- [x] **2.7** ย้ายจาก floating promise → `after(() => updateProfileInBackground(userId))`
+      ใน `handlers/messageHandler.ts` (Next รองรับ `after()` ซ้อนใน `after()` — ยืนยันจาก doc และทดสอบแล้วว่าทำงานจริง)
 
 ### H5 — Reply token อาจหมดอายุใน audio path
 
 > **สำคัญ:** ข้อนี้ **ไม่ได้หายไปเอง** หลังแก้ C4 — `after()` ทำให้ตอบ 200 เร็วขึ้น แต่ไม่ได้ยืดอายุ reply token
 
-- [ ] **2.8** ใน `services/replyService.ts:23` เมื่อ `replyMessage` ล้มเหลว อย่าคืน `null` เงียบ ๆ — log ให้ชัด
-- [ ] **2.9** เพิ่ม fallback เป็น `pushMessage` เมื่อ reply ล้มเหลว (แลกกับโควตา push)
-- [ ] **2.10** ตัดสินใจว่าจะเปิด fallback นี้เฉพาะ audio path หรือทุก path
+- [x] **2.8** เพิ่ม replyToken (8 ตัวแรก) ลงใน error log ของ `replyMessages` เพื่อสืบย้อนได้
+- [x] **2.9** เพิ่ม `replyOrPush(replyToken, userId, messages)` ใน `services/replyService.ts`
+      — ลอง reply ก่อน ถ้าคืน `null` ค่อย `pushMessage`
+- [x] **2.10** **[ตัดสินใจแล้ว]** เปิด fallback เฉพาะ path ที่ช้าจริง เพราะ push กินโควตาและ LINE คิดเงินตามจำนวนที่ส่ง:
+      - ✅ audio path **ทุกจุดที่ตอบ** (ผ่าน download + ASR มาแล้ว token เสี่ยงหมดอายุตั้งแต่ต้น)
+      - ✅ text path เฉพาะฝั่ง Gemini (fallback chain `flash-lite` → `flash` = ยิงได้ 2 รอบ)
+      - ❌ text path ฝั่ง keyword match — ตอบเร็วอยู่แล้ว ใช้ `replyMessages` ตามเดิม
+      - ❌ ข้อความขอโทษใน catch ของ text branch — ใช้ `replyMessages` ตามเดิม
+      > ถ้าอยากเปลี่ยนเป็นเปิดทุก path บอกได้ แก้จุดเดียวคือสลับ `replyMessages` → `replyOrPush`
 
 ### ✅ ตรวจรับ Phase 2
 
-- [ ] **2.11** บล็อกบอท → ตรวจ DB ว่า `isFollowing` เป็น `false` แล้ว
-- [ ] **2.12** ปลดบล็อก → กลับเป็น `true`
-- [ ] **2.13** พิมพ์ข้อความ 5 ครั้งติด → ตรวจ log ว่า `getProfile` ถูกเรียกแค่ครั้งเดียว (ไม่ใช่ 5 ครั้ง)
-- [ ] **2.14** commit Phase 2
+ทดสอบกับ DB จริง + dev server จริง ผ่าน `scripts/phase2-test.ts` และ `scripts/phase2-throttle-test.ts`
+
+- [x] **2.11** ยิง `unfollow` event → DB เปลี่ยนเป็น `isFollowing = false` ✓
+- [x] **2.12** ส่งข้อความหลังจากนั้น → self-heal กลับเป็น `isFollowing = true` ✓
+- [x] **2.13** ยิง 5 ข้อความติดกันโดย `updatedAt` ยังสด → `getProfile` ถูกเรียก **0 ครั้ง** ✓
+      (เดิมจะเป็น 5 ครั้ง + upsert 5 ครั้ง)
+- [x] **2.13b** ย้อน `updatedAt` เป็น 72 ชม. แล้วยิง 1 ข้อความ → `getProfile` ถูกเรียก **1 ครั้ง** ✓
+      (ยืนยันว่า throttle ไม่ได้ปิดตายจนโปรไฟล์ไม่เคยอัปเดตเลย)
+- [x] **2.13c** ยิง `unfollow` ของ userId ที่ไม่มีใน DB → ตอบ 200 ไม่พัง แค่ log warning ✓
+- [x] **2.14** commit Phase 2
+
+> **ยังต้องยืนยันด้วย LINE จริง:** บล็อก/ปลดบล็อกบอทจากมือถือจริง และทดสอบ push fallback (H5)
+> โดยส่งข้อความเสียงยาว ๆ จนกว่า reply token จะหมดอายุ
 
 ---
 
@@ -237,6 +255,20 @@ export async function POST(req: NextRequest) {
 - [ ] **5.3** ตรวจซ้ำว่า `.env` ยังไม่ถูก track ใน git (รอบก่อนตรวจแล้วว่าไม่ถูก track และ `.gitignore` ครอบ `.env*` อยู่)
 - [ ] **5.4** ตั้ง env ทั้งหมดบน platform ที่จะ deploy ก่อนขึ้นจริง (C5 จะ fail fast ถ้าลืม — ตั้งใจให้เป็นแบบนั้น)
 - [ ] **5.5** ตรวจว่า `maxDuration = 60` ไม่เกินลิมิตของ plan ที่ใช้จริง
+
+---
+
+## สคริปต์ทดสอบ (อยู่ใน `scripts/`)
+
+เปิด dev server ที่พอร์ต 3999 ก่อน (`npx next dev -p 3999`) แล้วรัน:
+
+| สคริปต์ | ครอบคลุม | คำสั่ง |
+|---|---|---|
+| `webhook-signature-test.mjs` | 401 / 400 / 200, response time, batch events, group event | `node scripts/webhook-signature-test.mjs` |
+| `phase2-test.ts` | unfollow, self-heal, throttle (updatedAt สด) | `npx tsx --env-file=.env scripts/phase2-test.ts` |
+| `phase2-throttle-test.ts` | throttle อีกด้าน (updatedAt เก่า 72 ชม.) | `npx tsx --env-file=.env scripts/phase2-throttle-test.ts` |
+
+สคริปต์เซ็น HMAC ด้วย `CHANNEL_SECRET` จาก `.env` เอง และล้างข้อมูลทดสอบใน DB ให้หลังรันเสร็จ
 
 ---
 

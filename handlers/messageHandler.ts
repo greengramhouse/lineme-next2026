@@ -1,9 +1,10 @@
 // src/handlers/messageHandler.ts
+import { after } from "next/server";
 import { webhook } from "@line/bot-sdk";
 import { lineBlobClient, lineClient } from "@/config/line-config";
 import { findMatchedReply } from "@/services/replyRuleService";
 import { updateProfileInBackground } from "@/services/userService";
-import { replyMessages } from "@/services/replyService";
+import { replyMessages, replyOrPush } from "@/services/replyService";
 
 // 🌟 นำเข้า Gemini Service ที่เราเพิ่งสร้าง
 import { generateGeminiReply } from "@/services/geminiService";
@@ -37,7 +38,10 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
   const userId = event.source?.userId;
   if (userId) {
-    updateProfileInBackground(userId).catch(console.error);
+    // ใช้ after() ไม่ใช่ floating promise — งานที่ไม่มีใครถือ promise ไว้
+    // มีโอกาสถูกฆ่ากลางทางตอน deploy บน serverless
+    // (after() ซ้อนใน after() ได้ Next รองรับไว้แล้ว)
+    after(() => updateProfileInBackground(userId));
   }
 
   if (event.message.type === "text") {
@@ -82,20 +86,17 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
       const aiText = await generateGeminiReply(userText, userId);
 
       // 🌟 สั่งให้ตอบกลับใน "ร่างของน้องกรีน"
-      // รวบ replyToken และ messages ให้อยู่ในปีกกา {} ก้อนเดียวกัน
-      await lineClient.replyMessage({
-        replyToken: event.replyToken,
-        messages: [
-          {
-            type: "text",
-            text: aiText,
-            sender: {
-              name: "น้องกรีน 👧🏻", // 👈 ปรับให้สั้นลงเพื่อป้องกัน Emoji กินโควต้าตัวอักษร
-              iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
-            }
+      // Gemini อาจยิง 2 รอบ (flash-lite → flash) จึงเสี่ยง reply token หมดอายุ → ใช้ replyOrPush
+      await replyOrPush(event.replyToken, userId, [
+        {
+          type: "text",
+          text: aiText,
+          sender: {
+            name: "น้องกรีน 👧🏻", // 👈 ปรับให้สั้นลงเพื่อป้องกัน Emoji กินโควต้าตัวอักษร
+            iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
           }
-        ]
-      });
+        }
+      ]);
     } catch (error) {
       // จุดเสี่ยงคือ findMatchedReply (Prisma) และ replyMessage
       // ถ้าพังแล้วปล่อยเงียบ ผู้ใช้จะไม่ได้รับอะไรกลับเลย
@@ -136,10 +137,9 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
 
       // เช็คว่า Typhoon พังหรือไม่ ถ้าพังให้แจ้งเตือนและหยุดทำงาน
       if (transcribedText.includes("ไม่สามารถถอดข้อความ") || transcribedText.includes("ข้อผิดพลาด")) {
-        await lineClient.replyMessage({
-          replyToken: event.replyToken,
-          messages: [{ type: "text", text: transcribedText }]
-        });
+        await replyOrPush(event.replyToken, userId, [
+          { type: "text", text: transcribedText }
+        ]);
         return;
       }
 
@@ -168,7 +168,8 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
         });
 
         // ส่งคำตอบจากระบบคีย์เวิร์ดกลับไป แล้วจบฟังก์ชันเลย
-        await replyMessages(event.replyToken, messagesWithSender);
+        // ใช้ replyOrPush เพราะกว่าจะมาถึงจุดนี้ผ่าน download + ASR มาแล้ว token อาจหมดอายุ
+        await replyOrPush(event.replyToken, userId, messagesWithSender);
         return;
       }
 
@@ -178,27 +179,23 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
       const geminiPrompt = `(นี่คือข้อความที่ถอดจากเสียงพูดของ User): ${cleanUserVoiceText}`;
       const aiText = await generateGeminiReply(geminiPrompt, userId);
 
-      // ตอบกลับในร่างน้องกรีน
-      await lineClient.replyMessage({
-        replyToken: event.replyToken,
-        messages: [
-          {
-            type: "text",
-            text: aiText,
-            sender: {
-              name: "น้องกรีน 👧🏻",
-              iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
-            }
+      // ตอบกลับในร่างน้องกรีน — path นี้ยาวที่สุด (download + ASR + Gemini) เสี่ยง token หมดอายุมากสุด
+      await replyOrPush(event.replyToken, userId, [
+        {
+          type: "text",
+          text: aiText,
+          sender: {
+            name: "น้องกรีน 👧🏻",
+            iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
           }
-        ]
-      });
+        }
+      ]);
 
     } catch (error) {
       console.error("Audio Webhook Error:", error);
-      await lineClient.replyMessage({
-        replyToken: event.replyToken,
-        messages: [{ type: "text", text: "ขออภัยค่ะ ระบบฟังเสียงมีปัญหาชั่วคราว พิมพ์มาคุยแทนน้องกรีนก่อนน้า 😢" }]
-      });
+      await replyOrPush(event.replyToken, userId, [
+        { type: "text", text: "ขออภัยค่ะ ระบบฟังเสียงมีปัญหาชั่วคราว พิมพ์มาคุยแทนน้องกรีนก่อนน้า 😢" }
+      ]);
     }
   }
 }
