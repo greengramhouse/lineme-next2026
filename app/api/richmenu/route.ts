@@ -2,8 +2,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lineBlobClient, lineClient } from "@/config/line-config";
+import { requireAdminApi } from "@/lib/adminAuth";
 
 export async function POST(request: Request) {
+  const denied = await requireAdminApi();
+  if (denied) return denied;
+
   console.log("Received POST request to /api/richmenu");
   try {
     const body = await request.json();

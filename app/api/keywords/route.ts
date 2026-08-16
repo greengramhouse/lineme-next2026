@@ -2,8 +2,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma"; // เช็ค path ของ prisma client ให้ตรงกับโปรเจกต์คุณ
 import { invalidateReplyRuleCache } from "@/services/replyRuleService";
+import { requireAdminApi } from "@/lib/adminAuth";
 
 export async function POST(request: Request) {
+  const denied = await requireAdminApi();
+  if (denied) return denied;
+
   try {
     // 1. รับค่า Request Body จากฟอร์ม
     const body = await request.json();

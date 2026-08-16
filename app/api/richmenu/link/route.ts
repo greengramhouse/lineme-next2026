@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { lineClient } from "@/config/line-config";
+import { requireAdminApi } from "@/lib/adminAuth";
 
 export async function POST(request: Request) {
+  const denied = await requireAdminApi();
+  if (denied) return denied;
+
   try {
     const { lineId, richMenuId } = await request.json();
 

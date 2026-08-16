@@ -61,6 +61,76 @@ model RichMenu {
   @@index([richMenuId])
 }
 
+// ===========================================================================
+// Better Auth — บัญชีแอดมินที่ล็อกอินเข้า dashboard ผ่าน LINE Login
+//
+// ⚠️ ตั้งชื่อขึ้นต้นด้วย Admin เพราะ Better Auth ใช้ชื่อ default ว่า user/session/
+// account/verification ซึ่ง `user` จะไปชนกับ model User ข้างบน (= ผู้ติดตามบอทใน LINE)
+// คนละความหมายกันสิ้นเชิง ห้ามให้ปนกัน
+//
+// field ทั้งหมดคัดลอกตามนิยามใน @better-auth/core/dist/db/get-tables.mjs ของเวอร์ชัน 1.6.29
+// ห้ามแก้ชื่อ field เอง ถ้าอัปเกรด Better Auth ต้องเทียบไฟล์นั้นใหม่
+// ===========================================================================
+
+model AdminUser {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions AdminSession[]
+  accounts AdminAccount[]
+}
+
+model AdminSession {
+  id        String   @id @default(uuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AdminAccount {
+  id                    String    @id @default(uuid())
+  accountId             String // สำหรับ provider "line" ค่านี้คือ sub = LINE userId
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AdminVerification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
 // กัน LINE ส่ง event ซ้ำ (retry / redelivery) แล้วระบบทำงานซ้ำ
 // ทุก event ที่ LINE ส่งมามี webhookEventId ที่ไม่ซ้ำกัน ใช้เป็น dedup key ได้เลย
 // ถ้าไม่มีตารางนี้ event ที่ถูกส่งซ้ำจะเรียก Gemini ใหม่ + เขียน ChatHistory ซ้ำ

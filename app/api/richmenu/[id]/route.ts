@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lineClient } from "@/config/line-config";
+import { requireAdminApi } from "@/lib/adminAuth";
 
 
 
@@ -10,6 +11,9 @@ export async function DELETE(
   // 🌟 ใช้ Promise สำหรับ Next.js 15 เหมือนที่เราเคยแก้ไปในหน้า Keyword ครับ
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = await requireAdminApi();
+  if (denied) return denied;
+
   try {
     const { id } = await params;
 

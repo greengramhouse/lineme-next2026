@@ -1,15 +1,22 @@
+import { redirect } from "next/navigation";
 import Navbar from "@/app/components/Navbar";
 import { Metadata } from "next";
+import { getAdminIdentity } from "@/lib/adminAuth";
 
 export const metadata: Metadata = {
   title: "Dashboard Lineme",
 };
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // ด่านจริงของฝั่งหน้าเว็บ — proxy.ts ดูแค่ว่ามีคุกกี้ไหม ไม่ได้เช็ค allowlist
+  // ตรงนี้เช็คทุกครั้งที่โหลดหน้า ถอดชื่อออกจาก ADMIN_LINE_IDS แล้วมีผลทันที
+  const admin = await getAdminIdentity();
+  if (!admin) redirect("/login");
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />

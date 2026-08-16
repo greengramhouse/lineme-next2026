@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { invalidateReplyRuleCache } from "@/services/replyRuleService";
+import { requireAdminApi } from "@/lib/adminAuth";
 
 // ==========================================
 // 1. API สำหรับการแก้ไขข้อมูล (PUT)
@@ -10,6 +11,9 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> } // 🌟 1. เปลี่ยน Type เป็น Promise
 ) {
+  const denied = await requireAdminApi();
+  if (denied) return denied;
+
   try {
     const { id } = await params; // 🌟 2. ใส่ await ก่อนดึง id ออกมา
     const body = await request.json();
@@ -57,6 +61,9 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> } // 🌟 1. เปลี่ยน Type เป็น Promise
 ) {
+  const denied = await requireAdminApi();
+  if (denied) return denied;
+
   try {
     const { id } = await params; // 🌟 2. ใส่ await ก่อนดึง id ออกมา
 
