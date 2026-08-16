@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ยกเว้นเทมเพลตที่ไม่มีค่าจริงอยู่ข้างใน — ต้อง commit เพื่อให้คนอื่นรู้ว่าต้องตั้ง env อะไรบ้าง
+!.env.example
 
 # vercel
 .vercel
