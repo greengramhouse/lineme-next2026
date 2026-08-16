@@ -14,7 +14,7 @@
 | 2 — High H2 / H4 / H5 | ✅ เสร็จ ทดสอบผ่าน 5/5 | `35e8363` |
 | 3 — H3 idempotency | ✅ เสร็จ ทดสอบผ่าน 4/4 | `5117154` |
 | 3 — H6 admin auth (Better Auth + LINE Login) | ✅ เสร็จ ทดสอบผ่าน 15/15 | `ef5f0cd` |
-| 3 — H7 LIFF ID token | ✅ เสร็จ ทดสอบผ่าน 6/6 | (commit ถัดไป) |
+| 3 — H7 LIFF ID token | ✅ เสร็จ ทดสอบผ่าน 6/6 | `d444044` |
 | 4 — Medium M1/M3/M5a/M6-M11 | ✅ เสร็จ ทดสอบผ่าน 12/12 | `a73ca0c` |
 | 4 — M2 postback, M5b เปลี่ยนชื่อ env | ⏸ ข้ามตามที่ตัดสินใจ | — |
 | 5 — ย้าย Typhoon key ไป env | ✅ เสร็จ ทดสอบผ่าน 4/4 | `c72752c` |
@@ -22,15 +22,39 @@
 
 โค้ดทั้งหมด push ขึ้น `origin/main` แล้ว (`c72752c`)
 
-**ค้างอยู่ (เรียงตามความเร่งด่วน):**
-1. 🔴 **ยืนยันว่า revoke Typhoon key เดิมแล้ว** (ข้อ 5.2b)
-2. 🔴 **ตั้ง env ใหม่ 5 ตัวบน Vercel ก่อน deploy** ไม่งั้น build พัง (ข้อ 5.4)
-   `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `ADMIN_LINE_IDS`,
-   `LINE_LOGIN_CHANNEL_ID`, `LINE_LOGIN_CHANNEL_SECRET`, `TYPHOON_API_KEY`
-3. 🔴 **ลง Callback URL ของ production ใน LINE Developers Console**
-   `https://lineme-next2026.vercel.app/api/auth/callback/line`
-4. ทดสอบล็อกอินจริงจากเบราว์เซอร์ (ยังทดสอบได้แค่ระดับ HTTP)
-5. M2 postback — ถ้าจะใช้ rich menu แบบ postback
+## ✅ ยืนยันบน production แล้ว — 2026-08-16
+
+โค้ดทั้งหมด push ขึ้น `origin/main` และ deploy บน `https://lineme-next2026.vercel.app` เรียบร้อย
+เจ้าของโปรเจกต์ทดสอบล็อกอินจริงผ่านแล้ว และตรวจซ้ำจากภายนอกได้ผล **11/11**:
+
+| ตรวจ | ผล |
+|---|---|
+| 🔴 `POST /api/line-webhook` signature ถูก | **200** — ไม่ถูก auth บล็อก |
+| 🔴 `POST /api/line-webhook` signature ผิด | **401** — `validateSignature` ยังทำงาน |
+| `GET /dashboard` | 307 → `/login?redirect=%2Fdashboard` |
+| `POST /api/keywords`, `/api/richmenu`, `/api/richmenu/link` | 401 ทุกเส้น |
+| `/login`, `/`, `/form/userform`, `/api/auth/*` | 200 ตามเดิม |
+| `redirect_uri` ของ LINE Login | `https://lineme-next2026.vercel.app/api/auth/callback/line` |
+| scope / PKCE | `openid profile email` · `S256` |
+
+env บน Vercel ตั้งครบแล้ว (`BETTER_AUTH_URL` ชี้ production ถูก ไม่ใช่ localhost)
+และลง Callback URL ทั้ง localhost + production ใน LINE Developers Console แล้ว
+
+---
+
+**ค้างอยู่:**
+1. 🔴 **revoke Typhoon key เดิม** (ข้อ 5.2b) — key ใหม่ใช้งานได้แล้ว แต่ key เดิมยังดึงได้จาก
+   git history ที่ commit `074df3c` บน public repo และ**ยังใช้งานได้อยู่จนกว่าจะ revoke**
+2. ทดสอบจากมือถือจริง: ส่งข้อความเสียง, บล็อก/ปลดบล็อกบอท, เชิญบอทเข้ากลุ่มแล้วพิมพ์
+   keyword ที่ตั้ง `showLoading: true`
+3. M2 postback — ถ้าจะใช้ rich menu แบบ postback (ข้อ 4.2-4.3)
+
+> **เกร็ดจากการ debug:** แก้ `schema.prisma` แล้วต้อง **รีสตาร์ท dev server** ไม่ใช่แค่
+> `prisma generate` เพราะ `lib/prisma.ts` cache PrismaClient ไว้บน `globalThis`
+> (ตัวที่กัน connection leak) ซึ่งอยู่รอดข้าม hot reload ไฟล์ที่ generate ใหม่จึงไม่ถูกโหลด
+> อาการคือ Better Auth ฟ้อง `Model adminVerification does not exist in the database`
+> ทั้งที่ทั้ง client และตารางใน DB มีครบ — production ไม่เจอปัญหานี้เพราะ `build` script
+> รัน `prisma generate` ก่อน `next build` อยู่แล้ว
 
 ---
 
