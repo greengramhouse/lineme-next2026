@@ -1,6 +1,7 @@
 // app/api/keywords/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma"; // เช็ค path ของ prisma client ให้ตรงกับโปรเจกต์คุณ
+import { invalidateReplyRuleCache } from "@/services/replyRuleService";
 
 export async function POST(request: Request) {
   try {
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
         payload: payload,     // รับ Object ก้อน JSON ยัดลงไปได้เลย
       },
     });
+
+    // ล้าง cache ของกฎ CONTAINS ไม่งั้นคีย์เวิร์ดใหม่จะยังไม่ทำงานจนกว่า TTL จะหมด
+    invalidateReplyRuleCache();
 
     // 4. บันทึกสำเร็จ ส่งข้อมูลที่ถูกสร้างกลับไปให้ Client
     return NextResponse.json(

@@ -2,6 +2,7 @@
 import { after } from "next/server";
 import { webhook } from "@line/bot-sdk";
 import { lineBlobClient, lineClient } from "@/config/line-config";
+import { SENDER_GREEN, SENDER_PROGRAM, withSender } from "@/config/senders";
 import { findMatchedReply } from "@/services/replyRuleService";
 import { updateProfileInBackground } from "@/services/userService";
 import { replyMessages, replyOrPush } from "@/services/replyService";
@@ -9,6 +10,22 @@ import { replyMessages, replyOrPush } from "@/services/replyService";
 // 🌟 นำเข้า Gemini Service ที่เราเพิ่งสร้าง
 import { generateGeminiReply } from "@/services/geminiService";
 import { processTyphoonASR } from "@/services/typhoon";
+
+/** ข้อความตอบกลับสำหรับชนิดข้อความที่ระบบยังไม่รองรับ */
+const UNSUPPORTED_MESSAGE_REPLY: Record<string, string> = {
+  image: "น้องกรีนยังดูรูปไม่เป็นเลยค่ะ 🥲 รบกวนพิมพ์อธิบายมาแทนได้ไหมคะ",
+  video: "น้องกรีนยังดูวิดีโอไม่ได้ค่ะ 🥲 รบกวนพิมพ์หรือส่งเสียงมาแทนน้า",
+  file: "น้องกรีนยังเปิดไฟล์ไม่ได้ค่ะ 🥲 รบกวนพิมพ์รายละเอียดมาแทนน้า",
+  location: "ขอบคุณสำหรับตำแหน่งค่ะ 📍 แต่ตอนนี้น้องกรีนยังอ่านแผนที่ไม่เป็น รบกวนพิมพ์ชื่อสถานที่มาแทนน้า",
+  sticker: "น่ารักจังเลยค่ะ 😆 พิมพ์มาคุยกับน้องกรีนได้เลยน้า",
+};
+
+const DEFAULT_UNSUPPORTED_REPLY =
+  "ขออภัยค่ะ น้องกรีนรับได้แค่ข้อความกับเสียงน้า 🙏 รบกวนพิมพ์หรือส่งเสียงมาแทนได้ไหมคะ";
+
+/** prefix สำหรับ log ให้สืบย้อนได้ว่าเป็น event ไหน */
+const tag = (event: webhook.MessageEvent) =>
+  `[MessageHandler ${event.webhookEventId ?? "unknown"}]`;
 
 /**
  * แสดง loading animation แบบปลอดภัย
@@ -30,7 +47,9 @@ async function showLoadingSafely(
 
   await lineClient
     .showLoadingAnimation({ chatId: userId, loadingSeconds })
-    .catch(console.error);
+    .catch((error) =>
+      console.error(`${tag(event)} showLoadingAnimation ล้มเหลว:`, error)
+    );
 }
 
 export async function handleMessageEvent(event: webhook.MessageEvent) {
@@ -45,157 +64,161 @@ export async function handleMessageEvent(event: webhook.MessageEvent) {
   }
 
   if (event.message.type === "text") {
-    const userText = event.message.text.trim();
-
-    try {
-      // 1. นำข้อความไปเช็คในฐานข้อมูล
-      const matchedReply = await findMatchedReply(userText.toLowerCase());
-
-      // 2. ถ้าเจอคำตอบในฐานข้อมูล
-      if (matchedReply) {
-        if (matchedReply.showLoading) {
-          await showLoadingSafely(event, 5);
-        }
-
-        // 🌟 สร้างโปรไฟล์จำแลงที่ต้องการ (เช่น เปลี่ยนเป็นน้องกรีน หรือ ชื่อโรงเรียน)
-        const customSender = {
-          name: "น้องโปรแกรม 👦🏻",
-          iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
-        };
-
-        // 🌟 ใช้ .map() เพื่อแกะกล่องข้อความเดิม แล้วยัด sender เข้าไปในทุกๆ ข้อความ
-        const messagesWithSender = matchedReply.messages.map((msg: any) => {
-          return {
-            ...msg, // ก๊อปปี้ข้อมูลเดิมทั้งหมด (เช่น Flex, Text)
-            sender: customSender // เติม sender เข้าไป
-          };
-        });
-
-        // โยนข้อความที่ถูกอัปเกรดแล้ว ไปให้ฟังก์ชันตอบกลับ
-        await replyMessages(event.replyToken, messagesWithSender);
-        return;
-      }
-
-      // ==========================================
-      // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini (น้องกรีน) จัดการ!
-      // ==========================================
-
-      await showLoadingSafely(event, 20);
-
-      // เรียกใช้ Gemini
-      const aiText = await generateGeminiReply(userText, userId);
-
-      // 🌟 สั่งให้ตอบกลับใน "ร่างของน้องกรีน"
-      // Gemini อาจยิง 2 รอบ (flash-lite → flash) จึงเสี่ยง reply token หมดอายุ → ใช้ replyOrPush
-      await replyOrPush(event.replyToken, userId, [
-        {
-          type: "text",
-          text: aiText,
-          sender: {
-            name: "น้องกรีน 👧🏻", // 👈 ปรับให้สั้นลงเพื่อป้องกัน Emoji กินโควต้าตัวอักษร
-            iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
-          }
-        }
-      ]);
-    } catch (error) {
-      // จุดเสี่ยงคือ findMatchedReply (Prisma) และ replyMessage
-      // ถ้าพังแล้วปล่อยเงียบ ผู้ใช้จะไม่ได้รับอะไรกลับเลย
-      console.error("[MessageHandler] Text branch ล้มเหลว:", error);
-      await replyMessages(event.replyToken, [
-        {
-          type: "text",
-          text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองพิมพ์มาใหม่อีกครั้งน้า 😢"
-        }
-      ]);
-    }
+    await handleTextMessage(event, event.message.text.trim(), userId);
+    return;
   }
 
   if (event.message.type === "audio") {
-    const messageId = event.message.id;
-
-    // 🌟 1. โชว์ Loading รอไว้ก่อนเลย (เพราะสเตปดาวน์โหลด + ASR ใช้เวลา)
-    await showLoadingSafely(event, 10);
-
-    try {
-      // 🌟 2. โหลดไฟล์เสียงจาก LINE (รองรับทั้ง Blob และ Stream)
-      const audioContent = await lineBlobClient.getMessageContent(messageId);
-
-      let audioBuffer: Buffer;
-      if (typeof (audioContent as any).arrayBuffer === "function") {
-        const arrayBuf = await (audioContent as any).arrayBuffer();
-        audioBuffer = Buffer.from(arrayBuf);
-      } else {
-        const chunks: any[] = [];
-        for await (const chunk of (audioContent as any)) {
-          chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-        }
-        audioBuffer = Buffer.concat(chunks);
-      }
-
-      // 🌟 3. ส่งเข้า Typhoon ASR เพื่อแปลงเสียงพูดเป็นข้อความ Text
-      const transcribedText = await processTyphoonASR(audioBuffer);
-
-      // เช็คว่า Typhoon พังหรือไม่ ถ้าพังให้แจ้งเตือนและหยุดทำงาน
-      if (transcribedText.includes("ไม่สามารถถอดข้อความ") || transcribedText.includes("ข้อผิดพลาด")) {
-        await replyOrPush(event.replyToken, userId, [
-          { type: "text", text: transcribedText }
-        ]);
-        return;
-      }
-
-      // นำข้อความเสียงที่ถอดได้มาตัดช่องว่างเตรียมเอาไปค้นหา
-      const cleanUserVoiceText = transcribedText.trim();
-
-      // ==========================================================
-      // 🌟 สเตปที่ 3.5: นำข้อความจากเสียงไปเช็ค Keyword ในฐานข้อมูลก่อน
-      // ==========================================================
-      const matchedReply = await findMatchedReply(cleanUserVoiceText.toLowerCase());
-
-      // เจอกลุ่มคำตอบที่ตรงกับคีย์เวิร์ด -> สั่งให้น้องโปรแกรมตอบทันที!
-      if (matchedReply) {
-        // สร้างโปรไฟล์จำแลงของน้องโปรแกรม
-        const customSender = {
-          name: "น้องโปรแกรม 👦🏻",
-          iconUrl: "https://png.pngtree.com/png-clipart/20221226/ourmid/pngtree-little-girl-illustration-with-bangs-png-image_6497274.png"
-        };
-
-        // ยัดสติ๊กเกอร์โปรไฟล์เข้าข้อความในคีย์เวิร์ดทั้งหมด
-        const messagesWithSender = matchedReply.messages.map((msg: any) => {
-          return {
-            ...msg,
-            sender: customSender
-          };
-        });
-
-        // ส่งคำตอบจากระบบคีย์เวิร์ดกลับไป แล้วจบฟังก์ชันเลย
-        // ใช้ replyOrPush เพราะกว่าจะมาถึงจุดนี้ผ่าน download + ASR มาแล้ว token อาจหมดอายุ
-        await replyOrPush(event.replyToken, userId, messagesWithSender);
-        return;
-      }
-
-      // ==========================================================
-      // 🌟 4. ถ้าไม่เจอคีย์เวิร์ดในระบบ -> ค่อยส่งข้อความให้ Gemini (น้องกรีน) จัดการ
-      // ==========================================================
-      const geminiPrompt = `(นี่คือข้อความที่ถอดจากเสียงพูดของ User): ${cleanUserVoiceText}`;
-      const aiText = await generateGeminiReply(geminiPrompt, userId);
-
-      // ตอบกลับในร่างน้องกรีน — path นี้ยาวที่สุด (download + ASR + Gemini) เสี่ยง token หมดอายุมากสุด
-      await replyOrPush(event.replyToken, userId, [
-        {
-          type: "text",
-          text: aiText,
-          sender: {
-            name: "น้องกรีน 👧🏻",
-            iconUrl: "https://i.pinimg.com/236x/b2/6a/18/b26a1862d53bb75d5f104c2897365d9a.jpg"
-          }
-        }
-      ]);
-
-    } catch (error) {
-      console.error("Audio Webhook Error:", error);
-      await replyOrPush(event.replyToken, userId, [
-        { type: "text", text: "ขออภัยค่ะ ระบบฟังเสียงมีปัญหาชั่วคราว พิมพ์มาคุยแทนน้องกรีนก่อนน้า 😢" }
-      ]);
-    }
+    await handleAudioMessage(event, event.message.id, userId);
+    return;
   }
+
+  // ชนิดที่ยังไม่รองรับ — เดิมเงียบสนิท ผู้ใช้ไม่รู้ว่าบอทได้รับหรือเปล่า
+  const fallbackText =
+    UNSUPPORTED_MESSAGE_REPLY[event.message.type] ?? DEFAULT_UNSUPPORTED_REPLY;
+
+  console.log(`${tag(event)} ได้รับข้อความชนิด "${event.message.type}" ที่ยังไม่รองรับ`);
+
+  await replyMessages(
+    event.replyToken,
+    withSender([{ type: "text", text: fallbackText }], SENDER_GREEN)
+  );
+}
+
+async function handleTextMessage(
+  event: webhook.MessageEvent,
+  userText: string,
+  userId: string | undefined
+) {
+  const replyToken = event.replyToken!;
+
+  try {
+    // 1. นำข้อความไปเช็คในฐานข้อมูล
+    const matchedReply = await findMatchedReply(userText.toLowerCase());
+
+    // 2. ถ้าเจอคำตอบในฐานข้อมูล
+    if (matchedReply) {
+      if (matchedReply.showLoading) {
+        await showLoadingSafely(event, 5);
+      }
+
+      // ตอบเร็วอยู่แล้ว จึงไม่ต้อง fallback เป็น push (push กินโควตา)
+      await replyMessages(
+        replyToken,
+        withSender(matchedReply.messages, SENDER_PROGRAM)
+      );
+      return;
+    }
+
+    // ==========================================
+    // 3. ถ้าไม่เจอคีย์เวิร์ด -> โยนให้ Gemini (น้องกรีน) จัดการ!
+    // ==========================================
+    await showLoadingSafely(event, 20);
+
+    const aiText = await generateGeminiReply(userText, userId);
+
+    // Gemini อาจยิง 2 รอบ (flash-lite → flash) จึงเสี่ยง reply token หมดอายุ → ใช้ replyOrPush
+    await replyOrPush(
+      replyToken,
+      userId,
+      withSender([{ type: "text", text: aiText }], SENDER_GREEN)
+    );
+  } catch (error) {
+    // จุดเสี่ยงคือ findMatchedReply (Prisma) และ replyMessage
+    // ถ้าพังแล้วปล่อยเงียบ ผู้ใช้จะไม่ได้รับอะไรกลับเลย
+    console.error(`${tag(event)} text branch ล้มเหลว:`, error);
+    await replyMessages(replyToken, [
+      {
+        type: "text",
+        text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองพิมพ์มาใหม่อีกครั้งน้า 😢",
+      },
+    ]);
+  }
+}
+
+async function handleAudioMessage(
+  event: webhook.MessageEvent,
+  messageId: string,
+  userId: string | undefined
+) {
+  const replyToken = event.replyToken!;
+
+  // 🌟 1. โชว์ Loading รอไว้ก่อนเลย (เพราะสเตปดาวน์โหลด + ASR ใช้เวลา)
+  await showLoadingSafely(event, 10);
+
+  try {
+    // 🌟 2. โหลดไฟล์เสียงจาก LINE (รองรับทั้ง Blob และ Stream)
+    const audioBuffer = await downloadAudio(messageId);
+
+    // 🌟 3. ส่งเข้า Typhoon ASR เพื่อแปลงเสียงพูดเป็นข้อความ Text
+    const transcribedText = await processTyphoonASR(audioBuffer);
+
+    // เช็คว่า Typhoon พังหรือไม่ ถ้าพังให้แจ้งเตือนและหยุดทำงาน
+    if (
+      transcribedText.includes("ไม่สามารถถอดข้อความ") ||
+      transcribedText.includes("ข้อผิดพลาด")
+    ) {
+      console.error(`${tag(event)} ASR ไม่สำเร็จ: ${transcribedText}`);
+      await replyOrPush(replyToken, userId, [
+        { type: "text", text: transcribedText },
+      ]);
+      return;
+    }
+
+    // นำข้อความเสียงที่ถอดได้มาตัดช่องว่างเตรียมเอาไปค้นหา
+    const cleanUserVoiceText = transcribedText.trim();
+
+    // ==========================================================
+    // 🌟 สเตปที่ 3.5: นำข้อความจากเสียงไปเช็ค Keyword ในฐานข้อมูลก่อน
+    // ==========================================================
+    const matchedReply = await findMatchedReply(cleanUserVoiceText.toLowerCase());
+
+    // เจอกลุ่มคำตอบที่ตรงกับคีย์เวิร์ด -> สั่งให้น้องโปรแกรมตอบทันที!
+    if (matchedReply) {
+      // ใช้ replyOrPush เพราะกว่าจะมาถึงจุดนี้ผ่าน download + ASR มาแล้ว token อาจหมดอายุ
+      await replyOrPush(
+        replyToken,
+        userId,
+        withSender(matchedReply.messages, SENDER_PROGRAM)
+      );
+      return;
+    }
+
+    // ==========================================================
+    // 🌟 4. ถ้าไม่เจอคีย์เวิร์ดในระบบ -> ค่อยส่งข้อความให้ Gemini (น้องกรีน) จัดการ
+    // ==========================================================
+    const geminiPrompt = `(นี่คือข้อความที่ถอดจากเสียงพูดของ User): ${cleanUserVoiceText}`;
+    const aiText = await generateGeminiReply(geminiPrompt, userId);
+
+    // path นี้ยาวที่สุด (download + ASR + Gemini) เสี่ยง token หมดอายุมากสุด
+    await replyOrPush(
+      replyToken,
+      userId,
+      withSender([{ type: "text", text: aiText }], SENDER_GREEN)
+    );
+  } catch (error) {
+    console.error(`${tag(event)} audio branch ล้มเหลว:`, error);
+    await replyOrPush(replyToken, userId, [
+      {
+        type: "text",
+        text: "ขออภัยค่ะ ระบบฟังเสียงมีปัญหาชั่วคราว พิมพ์มาคุยแทนน้องกรีนก่อนน้า 😢",
+      },
+    ]);
+  }
+}
+
+/** ดาวน์โหลดไฟล์เสียงจาก LINE — SDK คืนได้ทั้ง Blob และ Stream แล้วแต่ runtime */
+async function downloadAudio(messageId: string): Promise<Buffer> {
+  const audioContent = await lineBlobClient.getMessageContent(messageId);
+
+  if (typeof (audioContent as any).arrayBuffer === "function") {
+    const arrayBuf = await (audioContent as any).arrayBuffer();
+    return Buffer.from(arrayBuf);
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of audioContent as any) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
 }

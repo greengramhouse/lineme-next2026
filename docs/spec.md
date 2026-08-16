@@ -227,23 +227,47 @@ export async function POST(req: NextRequest) {
 
 ---
 
-## Phase 4 — Medium (ทำตามสะดวก)
+## Phase 4 — Medium
 
-- [ ] **4.1** **M1** — เพิ่ม fallback message สำหรับ image / video / file / location / sticker
-      (ตอนนี้รองรับแค่ `text` / `audio` นอกนั้นเงียบสนิท)
-- [ ] **4.2** **M2** — เปิด `postback` handler (ตอนนี้ comment ไว้ที่ `handlers/index.ts:12-13`)
-      ถ้ามีแผนใช้ rich menu แบบ postback ต้องทำข้อนี้
-- [ ] **4.3** **M2** — พิจารณาเพิ่ม `join` / `leave` / `memberJoined` / `unsend` / `videoPlayComplete`
-- [ ] **4.4** **M3** — cache `AutoReply` แบบ CONTAINS พร้อม TTL (ตอนนี้ `replyRuleService.ts:28-33` ดึงทั้งตารางทุกข้อความ)
-- [ ] **4.5** **M5** — สร้าง `.env.example` และพิจารณาเปลี่ยนชื่อ env เป็น `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN`
-      (ถ้าเปลี่ยนชื่อ ต้องแก้ `.env` จริงและตัวตั้งค่าตอน deploy ด้วย)
-- [ ] **4.6** **M6** — เอา `(msg: any)` ออก (`messageHandler.ts:42,141`) ใช้ `messagingApi.Message` ที่ SDK ให้มา
-- [ ] **4.7** **M7** — ดึง object `sender` (น้องกรีน / น้องโปรแกรม) ที่ hardcode ซ้ำ 4 ที่
-      (`messageHandler.ts:36-39, 76-79, 135-138, 166-169`) ออกเป็น constant ที่เดียว
-- [ ] **4.8** **M8** — เปลี่ยน `if (event.message.type === "audio")` (`:85`) เป็น `else if`
-- [ ] **4.9** **M9** — ใส่ `webhookEventId` ลงใน log ทุกจุด เพื่อให้สืบย้อนได้ว่า event ไหนพัง
-- [ ] **4.10** **M10** — `typhoon.ts:46` เปลี่ยน `data.text.trim()` เป็น `data.text?.trim()`
-- [ ] **4.11** **M11** — ลบ dead code `if (!TYPHOON_API_KEY)` ที่ `typhoon.ts:9-11` (เงื่อนไขเป็นจริงไม่ได้เพราะ key เป็น literal)
+- [x] **4.1** **M1** — เพิ่ม fallback message สำหรับ image / video / file / location / sticker
+      แต่ละชนิดมีข้อความเฉพาะของตัวเอง (`UNSUPPORTED_MESSAGE_REPLY`) และมี default สำหรับชนิดอื่น
+- [ ] **4.2** **M2** — เปิด `postback` handler *(ยังไม่ทำ — รอคำตอบว่าใช้ rich menu แบบ postback หรือไม่)*
+- [ ] **4.3** **M2** — `join` / `leave` / `memberJoined` / `unsend` / `videoPlayComplete` *(ยังไม่ทำ — รอคำตอบเดียวกัน)*
+- [x] **4.4** **M3** — cache กฎ CONTAINS ในหน่วยความจำ TTL 60 วิ
+      พร้อม `invalidateReplyRuleCache()` ที่ต่อเข้า admin API แล้ว (POST/PUT/DELETE keywords)
+      → แก้คีย์เวิร์ดผ่านหน้า dashboard เห็นผลทันที ไม่ต้องรอ TTL
+- [x] **4.5a** **M5** — สร้าง `.env.example` + เพิ่ม `!.env.example` ใน `.gitignore`
+      (เดิม `.env*` ครอบไปถึงเทมเพลตด้วย ทำให้ commit ไม่ได้)
+- [ ] **4.5b** **M5** — เปลี่ยนชื่อ env เป็น `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN`
+      *(ยังไม่ทำ — เป็น breaking change ต้องแก้ `.env` จริงและตัวตั้งค่าบน platform พร้อมกัน รอตัดสินใจ)*
+- [x] **4.6** **M6** — เอา `(msg: any)` ออก ใช้ `messagingApi.Message` จริง
+      (`sender` อยู่ใน `MessageBase` ของ SDK อยู่แล้ว จึงพิมพ์ type ได้ไม่ต้อง cast)
+- [x] **4.7** **M7** — ย้าย sender ไป `config/senders.ts` (`SENDER_PROGRAM`, `SENDER_GREEN`, `withSender()`)
+      ทั้ง 4 จุดเรียกใช้ constant เดียวกันแล้ว
+- [x] **4.8** **M8** — แยกเป็นฟังก์ชัน `handleTextMessage` / `handleAudioMessage` แล้ว `return` หลังแต่ละสาขา
+      ชัดกว่า `else if` และทำให้ `handleMessageEvent` อ่านออกใน 20 บรรทัด
+- [x] **4.9** **M9** — ใส่ `webhookEventId` ลงใน log ทุกจุดผ่าน helper `tag(event)`
+      → log ออกมาเป็น `[MessageHandler TEST-EVENT-0001] ...`
+- [x] **4.10** **M10** — `data?.text?.trim()` + log response ดิบเมื่อไม่มีฟิลด์ `text`
+- [x] **4.11** **M11** — ลบ dead code `if (!TYPHOON_API_KEY)` (เงื่อนไขเป็นจริงไม่ได้)
+      และใส่ TODO ชี้ไปที่ข้อ 5.1-5.2 ไว้แทน
+
+### 🎁 แถมนอกแผน (เจอระหว่างแก้)
+
+- [x] **4.12** `app/api/keywords/[id]/route.ts` — `catch` ของ `PUT` **ว่างเปล่า** ไม่ได้ `return` อะไรเลย
+      Next จะโยน "No response is returned from route handler" กลายเป็น 500 แบบไม่มีสาเหตุให้ดู
+      แก้ให้ log + ตอบ 404 (P2025) / 400 (P2002) / 500 ตามชนิด error
+
+### ✅ ตรวจรับ Phase 4
+
+- [x] **4.13** ยิง event ชนิด sticker / image / location / video / file → **200 ทั้ง 5 ชนิด**
+      และ log ขึ้น `ได้รับข้อความชนิด "..." ที่ยังไม่รองรับ` ครบทุกชนิด ✓
+- [x] **4.14** log ทุกบรรทัดมี `webhookEventId` ติดไปด้วยแล้ว ✓
+- [x] **4.15** ทดสอบ cache ผ่าน `scripts/phase4-cache-test.ts` — ผ่าน 3/3 ✓
+      (อ่านครั้งแรกเจอ → ลบจาก DB ตรง ๆ แล้วยังเจอ = cache ทำงานจริง → `invalidate()` แล้วหายไป)
+- [x] **4.16** รัน regression ทั้งชุดซ้ำ → **12/12 ผ่าน** response time ยังเป็น 8 ms
+- [x] **4.17** `tsc --noEmit` และ `next build` ผ่าน
+- [x] **4.18** commit Phase 4
 
 ---
 
@@ -267,6 +291,7 @@ export async function POST(req: NextRequest) {
 | `webhook-signature-test.mjs` | 401 / 400 / 200, response time, batch events, group event | `node scripts/webhook-signature-test.mjs` |
 | `phase2-test.ts` | unfollow, self-heal, throttle (updatedAt สด) | `npx tsx --env-file=.env scripts/phase2-test.ts` |
 | `phase2-throttle-test.ts` | throttle อีกด้าน (updatedAt เก่า 72 ชม.) | `npx tsx --env-file=.env scripts/phase2-throttle-test.ts` |
+| `phase4-cache-test.ts` | cache กฎ CONTAINS + invalidate (ไม่ต้องเปิด dev server) | `npx tsx --env-file=.env scripts/phase4-cache-test.ts` |
 
 สคริปต์เซ็น HMAC ด้วย `CHANNEL_SECRET` จาก `.env` เอง และล้างข้อมูลทดสอบใน DB ให้หลังรันเสร็จ
 

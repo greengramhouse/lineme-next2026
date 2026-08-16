@@ -111,4 +111,23 @@ const batch = JSON.stringify({
 });
 results.push(await hit("1.20 batch 3 events", batch, sign(batch), 200));
 
+// M1 — ข้อความชนิดที่ยังไม่รองรับ ต้องมี fallback ตอบ ไม่ใช่เงียบ
+for (const [i, msgType] of ["sticker", "image", "location", "video", "file"].entries()) {
+  const payload = JSON.stringify({
+    destination: "Uxxxxxxxx",
+    events: [
+      {
+        type: "message", mode: "active", timestamp: 1700000000000,
+        webhookEventId: `TEST-UNSUPPORTED-${msgType}`,
+        deliveryContext: { isRedelivery: false },
+        source: { type: "user", userId: "Utest0000000000000000000000000000" },
+        replyToken: String(i).repeat(34).slice(0, 34),
+        message: { type: msgType, id: `9${i}` },
+      },
+    ],
+  });
+  results.push(await hit(`M1 ข้อความชนิด ${msgType}`, payload, sign(payload), 200));
+}
+
 console.log(`\nสรุป: ${results.filter(Boolean).length}/${results.length} ผ่าน`);
+console.log("ตรวจ log ฝั่ง server: ต้องเห็นบรรทัด 'ได้รับข้อความชนิด ... ที่ยังไม่รองรับ' ครบ 5 ชนิด");

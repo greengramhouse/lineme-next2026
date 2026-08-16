@@ -5,10 +5,9 @@ export async function processTyphoonASR(audioBuffer: Buffer): Promise<string> {
       audioBuffer.length,
       "bytes",
     );
-    const TYPHOON_API_KEY =  "sk-EnfaxzlAMqYMQpNUK0reJC2t72ko2h6Y5J41oik130AjPqp6";
-    if (!TYPHOON_API_KEY) {
-      return "ระบบยังไม่ได้ตั้งค่า TYPHOON_API_KEY ค่ะ";
-    }
+    // ⚠️ TODO: key นี้ hardcode อยู่ในซอร์สและติดอยู่ใน git history แล้ว (commit 074df3c)
+    // ต้องย้ายไป env + revoke key เดิม ก่อน push ขึ้น public repo — ดู docs/spec.md ข้อ 5.1-5.2
+    const TYPHOON_API_KEY = "sk-EnfaxzlAMqYMQpNUK0reJC2t72ko2h6Y5J41oik130AjPqp6";
 
     const TYPHOON_AUDIO_URL =
       "https://api.opentyphoon.ai/v1/audio/transcriptions";
@@ -43,7 +42,16 @@ export async function processTyphoonASR(audioBuffer: Buffer): Promise<string> {
     }
 
     const data = await response.json();
-    return data.text.trim() || "ไม่สามารถถอดข้อความจากเสียงได้ค่ะ";
+
+    // ใช้ ?. เพราะถ้า API เปลี่ยน schema แล้วไม่มีฟิลด์ text จะ throw TypeError
+    // ตกไปเข้า catch แล้วกลายเป็นข้อความ error ทั่วไป ทำให้ debug ยาก
+    const text = data?.text?.trim();
+    if (!text) {
+      console.error("[Typhoon ASR] response ไม่มีฟิลด์ text:", JSON.stringify(data)?.slice(0, 500));
+      return "ไม่สามารถถอดข้อความจากเสียงได้ค่ะ";
+    }
+
+    return text;
   } catch (error) {
     console.error("Typhoon ASR Request Error:", error);
     return "ขออภัยค่ะ เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบถอดเสียง (ASR)";
