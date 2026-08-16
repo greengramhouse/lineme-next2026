@@ -16,12 +16,14 @@
 | 3 — H6 / H7 (auth) | ⏸ **เลื่อนตามที่ตัดสินใจ** — ต้องทำก่อน deploy | — |
 | 4 — Medium M1/M3/M5a/M6-M11 | ✅ เสร็จ ทดสอบผ่าน 12/12 | `a73ca0c` |
 | 4 — M2 postback, M5b เปลี่ยนชื่อ env | ⏸ ข้ามตามที่ตัดสินใจ | — |
-| 5 — ย้าย Typhoon key ไป env | ✅ เสร็จ ทดสอบผ่าน 4/4 | (ดู log ล่าสุด) |
-| 5 — **revoke key เดิม** | 🔴 **ยังไม่ได้ทำ ต้องทำเอง** | — |
+| 5 — ย้าย Typhoon key ไป env | ✅ เสร็จ ทดสอบผ่าน 4/4 | `c72752c` |
+| 5 — ตั้ง env / ตรวจ Vercel | ⬜ ค้าง (5.2b, 5.2d, 5.4, 5.5, 5.6) | — |
+
+โค้ดทั้งหมด push ขึ้น `origin/main` แล้ว (`c72752c`)
 
 **ค้างอยู่ 3 กลุ่ม (เรียงตามความเร่งด่วน):**
-1. 🔴 **revoke Typhoon key เดิม** — repo เป็น public และ key อยู่ใน history แล้ว (ข้อ 5.2)
-2. H6 / H7 — auth ของ admin API และ LIFF ID token ต้องทำก่อน deploy รอบหน้า
+1. 🔴 **ยืนยันว่า revoke Typhoon key เดิมแล้ว** + ตั้ง env บน Vercel (ข้อ 5.2b, 5.2d, 5.4)
+2. H6 / H7 — auth ของ admin API และ LIFF ID token — **deploy อยู่จริงแล้ว เส้นพวกนี้เปิดโล่งอยู่ตอนนี้**
 3. M2 postback — ถ้าจะใช้ rich menu แบบ postback
 
 ---
@@ -326,9 +328,13 @@ export async function POST(req: NextRequest) {
 
 - [x] **5.1** ย้าย Typhoon API key ไปอ่านจาก `process.env.TYPHOON_API_KEY`
       สแกนทั้งโปรเจกต์ยืนยันแล้วว่าไม่มี `sk-` หลงเหลือในซอร์สอีก
-- [ ] **5.2** 🔴 **revoke key เดิมที่ opentyphoon.ai แล้วออกใหม่** — ยังไม่ได้ทำ ต้องทำเอง
-      key ยังอยู่ใน git history (commit `074df3c`) การลบจากไฟล์อย่างเดียว**ไม่พอ**
-- [ ] **5.2b** เอา key ใหม่ใส่ `.env` (บรรทัด `TYPHOON_API_KEY=` เตรียมไว้ให้แล้ว) และตั้งบน Vercel ด้วย
+- [x] **5.2** ออก key ใหม่แล้ว — ยืนยันว่าใช้ได้จริง (ยิง API ได้ `415 invalid audio format` ไม่ใช่ `401`
+      คือผ่าน auth แล้ว ตกที่ไฟล์เสียงปลอมที่ใช้ทดสอบ)
+- [ ] **5.2b** 🔴 **ยืนยันว่า revoke key เดิมแล้วจริง** — key เดิมยังดึงได้จาก GitHub ที่ commit `074df3c`
+      (ตรวจแล้วเมื่อ 2026-08-16 ยังพบอยู่ 1 บรรทัด) ถ้ายังไม่ revoke ใครก็ยังใช้ได้อยู่
+- [x] **5.2c** key ใหม่อยู่ใน `.env` แล้ว และไฟล์บน GitHub `main` ไม่มี `sk-` เหลืออยู่แล้ว ✓
+- [ ] **5.2d** ตั้ง `TYPHOON_API_KEY` บน **Vercel** ด้วย — ไม่งั้น production จะตอบว่า
+      "ระบบถอดเสียงยังไม่พร้อมใช้งาน" ทั้งที่ local ใช้ได้
 - [x] **5.3** ตรวจซ้ำว่า `.env` ยังไม่ถูก track ใน git ✓ (`.gitignore` ครอบ `.env*` และยกเว้นแค่ `.env.example`)
 - [ ] **5.4** ตั้ง env ทั้งหมดบน Vercel ก่อน deploy — **จำเป็น** เพราะ C5 fail fast
       เดิมใช้ `|| ""` จึง build ผ่านเสมอแม้ลืมตั้ง env ตอนนี้ถ้าไม่มี `CHANNEL_SECRET` /
