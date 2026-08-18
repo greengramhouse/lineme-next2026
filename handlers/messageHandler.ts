@@ -12,6 +12,8 @@ import {
   splitForLine,
 } from "@/services/replyService";
 import { handleFlowMessage } from "@/services/documentFlowService";
+import { REGISTER_KEYWORDS, startRegistration } from "@/services/accountLinkService";
+import { buildRegisterInvite } from "@/services/registerFlex";
 
 // 🌟 นำเข้า Gemini Service ที่เราเพิ่งสร้าง
 import { generateGeminiReply } from "@/services/geminiService";
@@ -124,6 +126,17 @@ async function handleTextMessage(
       return;
     }
 
+    // ==========================================================
+    // 0.5 ลงทะเบียนสมาชิก — ต้องมาก่อน keyword จากฐานข้อมูล
+    //
+    // ตอบด้วย AutoReply ที่ฝัง URL ตายตัวไม่ได้ เพราะทุกครั้งที่กดต้องขอ
+    // linkToken "ใบใหม่" จาก LINE (ใบเก่าอายุ 10 นาทีและใช้ได้ครั้งเดียว)
+    // ==========================================================
+    if (REGISTER_KEYWORDS.includes(userText)) {
+      await handleRegisterRequest(event, userId);
+      return;
+    }
+
     // 1. นำข้อความไปเช็คในฐานข้อมูล
     const matchedReply = await findMatchedReply(userText.toLowerCase());
 
@@ -164,6 +177,52 @@ async function handleTextMessage(
         text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองพิมพ์มาใหม่อีกครั้งน้า 😢",
       },
     ]);
+  }
+}
+
+/**
+ * ออกลิงก์ฟอร์มลงทะเบียนให้ผู้ใช้
+ *
+ * ตอบกลับด้วย reply ล้วน ๆ ทั้งเส้นทาง — ตัวบัตรสมาชิกจะถูกส่งทีหลังด้วย
+ * replyToken ของ event accountLink จึงไม่มีจุดไหนกินโควตา push เลย
+ */
+async function handleRegisterRequest(
+  event: webhook.MessageEvent,
+  userId: string | undefined
+) {
+  const replyToken = event.replyToken!;
+
+  // issueLinkToken ใช้กับผู้ใช้ในแชท 1:1 เท่านั้น — ในกลุ่ม source.userId ก็มีค่า
+  // ถ้าไม่กันไว้จะยิงไปแล้วโดน LINE ตอบ error กลับมาเปล่า ๆ
+  if (event.source?.type !== "user" || !userId) {
+    await replyMessages(
+      replyToken,
+      withSender(
+        [{ type: "text", text: "การลงทะเบียนต้องทำในแชทส่วนตัวกับบอทเท่านั้นค่ะ 🙏" }],
+        SENDER_PROGRAM
+      )
+    );
+    return;
+  }
+
+  try {
+    const { url, expiresAt } = await startRegistration(userId);
+    await replyMessages(replyToken, [buildRegisterInvite(url, expiresAt)]);
+  } catch (error) {
+    // สาเหตุที่เจอบ่อยคือลืมตั้ง APP_BASE_URL หรือ LINE ปฏิเสธ issueLinkToken
+    console.error(`${tag(event)} ออกลิงก์ลงทะเบียนล้มเหลว:`, error);
+    await replyMessages(
+      replyToken,
+      withSender(
+        [
+          {
+            type: "text",
+            text: "ขออภัยค่ะ ตอนนี้ระบบลงทะเบียนขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งน้า 😢",
+          },
+        ],
+        SENDER_GREEN
+      )
+    );
   }
 }
 

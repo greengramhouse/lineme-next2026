@@ -474,6 +474,46 @@ export async function POST(req: NextRequest) {
 
 ---
 
+## ✅ ลงทะเบียนผ่านเว็บ แล้วส่งบัตรสมาชิกกลับฟรี (Account Link) — 2026-08-18
+
+**โจทย์:** อยากมีหน้าเว็บลงทะเบียน แล้วพอลงทะเบียนเสร็จส่ง Flex บัตรสมาชิกกลับเข้าแชท
+โดยไม่กินโควตา push
+
+**กลไก:** LINE นับโควตาเฉพาะ push / multicast / narrowcast / broadcast — reply ไม่นับ
+flow account link จบด้วย event `accountLink` ที่ **มี replyToken ติดมาด้วย**
+จึงตอบบัตรสมาชิกตรงนั้นได้ฟรี (ดู `node_modules/@line/bot-sdk/dist/webhook/model/accountLinkEvent.d.ts`)
+
+**เส้นทาง:**
+
+1. ผู้ใช้พิมพ์ "ลงทะเบียน" ในแชท → `handleRegisterRequest` (messageHandler)
+2. `startRegistration()` เรียก `lineClient.issueLinkToken(userId)` → เก็บ linkToken ไว้ใน
+   `RegisterSession` แล้ว reply Flex ที่มีปุ่มเปิด `/register?s=<sessionId>`
+3. หน้าเว็บ (ไม่ใช่ LIFF) เช็คเซสชันฝั่งเซิร์ฟเวอร์ → ผู้ใช้กรอกชื่อ / เบอร์ / วันเกิด
+4. `submitRegistration()` พักข้อมูลไว้ที่เซสชัน สร้าง nonce แล้วให้เบราว์เซอร์เด้งไป
+   `https://access.line.me/dialog/bot/accountLink?linkToken=...&nonce=...`
+5. LINE ยิง event `accountLink` กลับมา → `completeRegistration()` เอา nonce มาเปิดเซสชัน
+   ย้ายข้อมูลลง `User` แล้ว reply Flex บัตรสมาชิกด้วย replyToken ของ event นั้น
+
+**ไฟล์:** `services/accountLinkService.ts`, `services/registerFlex.ts`,
+`handlers/accountLinkHandler.ts`, `app/register/`, `app/actions/registerAction.ts`,
+model `RegisterSession` (migration `20260818144551_add_register_session`)
+
+**ข้อจำกัดที่แก้ไม่ได้ (เป็นข้อบังคับของ LINE):**
+
+- flow ต้องเริ่มจากในแชทเสมอ เพราะต้องรู้ userId ก่อนถึงจะขอ linkToken ได้
+  → ทำเป็นเว็บลอย ๆ ให้คนนอกเข้ามาสมัครไม่ได้
+- linkToken อายุ 10 นาที ใช้ได้ครั้งเดียว — หมดอายุแล้ว LINE **ไม่ยิง webhook มาเลย**
+  ผู้ใช้เห็นแค่หน้า error ของ LINE → ฟอร์มจึงต้องสั้น (3 ช่อง) และมีทางขอลิงก์ใหม่
+- ถ้าเชื่อมไม่สำเร็จ (`link.result = "failed"`) LINE ไม่ส่ง replyToken มาด้วย → ตอบกลับไม่ได้ ได้แค่ log
+
+**ที่ต้องตั้งเพิ่ม:** env `APP_BASE_URL` = URL สาธารณะของเว็บ (dev = โดเมน ngrok)
+ถ้าไม่ตั้ง ระบบอื่นยังทำงานปกติ แต่กดลงทะเบียนแล้วบอทจะตอบว่าขัดข้อง
+
+**ตรวจรับ:** ผ่าน 27/27 (`scripts/account-link-test.ts`) — ส่วนที่ต้องคุยกับ LINE จริง
+(`issueLinkToken` + event `accountLink`) ทดสอบอัตโนมัติไม่ได้ ต้องลองด้วยมือในแชทจริง
+
+---
+
 ## สคริปต์ทดสอบ (อยู่ใน `scripts/`)
 
 เปิด dev server ที่พอร์ต 3999 ก่อน (`npx next dev -p 3999`) แล้วรัน:
@@ -485,6 +525,7 @@ export async function POST(req: NextRequest) {
 | `phase2-throttle-test.ts` | throttle อีกด้าน (updatedAt เก่า 72 ชม.) | `npx tsx --env-file=.env scripts/phase2-throttle-test.ts` |
 | `phase3-idempotency-test.ts` | ยิง event ซ้ำ (retry) ต้องประมวลผลครั้งเดียว | `npx tsx --env-file=.env scripts/phase3-idempotency-test.ts` |
 | `phase4-cache-test.ts` | cache กฎ CONTAINS + invalidate (ไม่ต้องเปิด dev server) | `npx tsx --env-file=.env scripts/phase4-cache-test.ts` |
+| `account-link-test.ts` | ลงทะเบียนผ่านเว็บ + account link (เซสชัน, nonce, หน้าเว็บ) | `npx tsx --env-file=.env scripts/account-link-test.ts 3999` |
 
 สคริปต์เซ็น HMAC ด้วย `CHANNEL_SECRET` จาก `.env` เอง และล้างข้อมูลทดสอบใน DB ให้หลังรันเสร็จ
 

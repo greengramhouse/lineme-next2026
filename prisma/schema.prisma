@@ -23,6 +23,9 @@ model User {
   statusMessage String?  // สเตตัสที่ตั้งใน LINE
   email         String?  // อีเมลที่ผูกกับ LINE
   userName      String?  // ชื่อที่ตั้งใน การลงทะเบียน
+  phone         String?  // เบอร์ติดต่อ — กรอกตอนลงทะเบียนผ่านเว็บ
+  birthday      String?  // วันเกิด เก็บเป็น "YYYY-MM-DD" ตามที่ input[type=date] ส่งมา
+  registeredAt  DateTime? // เวลาที่ลงทะเบียนสำเร็จ (= ตอน LINE ยืนยัน account link)
   isFollowing   Boolean  @default(true)       // สถานะว่ายังติดตามบอทอยู่ไหม
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -244,4 +247,46 @@ model ChatHistory {
 
   // สร้าง Index เพื่อให้การค้นหาประวัติและลบประวัติเก่าทำได้เร็วขึ้น
   @@index([lineId, createdAt])
+}
+
+// ===========================================================================
+// ลงทะเบียนผ่านเว็บ แล้วตอบบัตรสมาชิกกลับได้ฟรีด้วย Account Link ของ LINE
+//
+// ปัญหาที่แก้: หน้าเว็บฟอร์มไม่มี replyToken ในมือ ถ้าจะส่งบัตรสมาชิกกลับต้อง push
+// ซึ่งกินโควตาข้อความ แต่ flow account link ของ LINE จบด้วย event `accountLink`
+// ที่ "มี replyToken ติดมาด้วย" → ตอบ Flex ได้ฟรี (LINE ไม่นับ reply ในโควตา)
+//
+// ลำดับ: พิมพ์ "ลงทะเบียน" ในแชท → ออก linkToken → reply ลิงก์ฟอร์ม
+//        → กรอกเสร็จ → สร้าง nonce → เด้งไป access.line.me → LINE ยิง accountLink
+//        → เอา nonce มาเปิดแถวนี้ → reply บัตรสมาชิก
+//
+// ⚠️ ค่าที่โผล่ใน URL (?s=...) คือ id ของแถวนี้ ไม่ใช่ linkToken
+//    linkToken ห้ามหลุดไปอยู่ในลิงก์ เพราะเป็นกุญแจของพิธีกรรมฝั่ง LINE
+// ===========================================================================
+model RegisterSession {
+  id        String @id // สุ่มเอง ใช้เป็นพารามิเตอร์ ?s= ในลิงก์ฟอร์ม
+  lineId    String // เจ้าของเซสชัน — ได้จาก event ในแชท ไม่ใช่จากฟอร์ม
+  linkToken String // ของ LINE อายุ 10 นาที ใช้ได้ครั้งเดียว เก็บฝั่งเซิร์ฟเวอร์เท่านั้น
+
+  /// สร้างตอนกดส่งฟอร์ม — ใช้จับคู่กับ event accountLink ที่ LINE ส่งกลับมา
+  /// unique เพราะถ้าซ้ำแปลว่าจับคู่ผิดคน = เขียนข้อมูลให้ผิดคน
+  nonce String? @unique
+
+  /// pending = ออกลิงก์แล้วยังไม่กรอก, submitted = กรอกแล้วรอ LINE ยืนยัน, linked = จบแล้ว
+  status String @default("pending")
+
+  // ข้อมูลที่กรอก — พักไว้ตรงนี้ก่อน ยังไม่เขียนลง User
+  // เพราะถ้า LINE ยืนยันไม่ผ่าน (result = failed) ก็ไม่ควรนับว่าลงทะเบียนสำเร็จ
+  fullName String?
+  phone    String?
+  birthday String?
+
+  /// ตั้งเท่าอายุ linkToken (10 นาที) — เลยกำหนดแล้ว LINE จะไม่ยิง webhook ให้เลย
+  /// ปล่อยให้กดส่งฟอร์มได้จะยิ่งงงกว่า จึงตัดจบที่ฝั่งเราก่อน
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lineId])
+  @@index([expiresAt])
 }
